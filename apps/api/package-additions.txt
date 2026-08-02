@@ -1,0 +1,17 @@
+// ============================================
+// apps/api/package.json ga qo'shiladigan paketlar
+// ============================================
+
+// Dependencies bo'limiga qo'shing:
+{
+  "xlsx": "^0.18.5",
+  "multer": "^1.4.5-lts.1"
+}
+
+// devDependencies bo'limiga qo'shing:
+{
+  "@types/multer": "^1.4.11"
+}
+
+// Yoki bir buyruq bilan:
+// cd apps/api && npm install xlsx multer && npm install -D @types/multer

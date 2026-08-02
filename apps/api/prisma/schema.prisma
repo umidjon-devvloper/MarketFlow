@@ -1,0 +1,348 @@
+// MarketFlow - Multi-user + Organization
+// v4.1 - Team management
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// USER
+// ============================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  fullName  String
+  phone     String?
+  avatar    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Yangi: tashkilotlar
+  memberships     Membership[]
+  ownedOrgs       Organization[] @relation("OrgOwner")
+  sentInvites     Invitation[]   @relation("InviteSender")
+  aiJobs          AiJob[]
+
+  @@index([email])
+}
+
+// ============================================
+// ORGANIZATION (tashkilot/kompaniya)
+// ============================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique // URL uchun
+  logo        String?
+  description String?  @db.Text
+
+  ownerId String
+  owner   User   @relation("OrgOwner", fields: [ownerId], references: [id])
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members          Membership[]
+  invitations      Invitation[]
+  products         Product[]
+  userMarketplaces UserMarketplace[]
+
+  @@index([ownerId])
+  @@index([slug])
+}
+
+// ============================================
+// MEMBERSHIP (foydalanuvchi + tashkilot + rol)
+// ============================================
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  role      MemberRole @default(STAFF)
+  isActive  Boolean    @default(true)
+  joinedAt  DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+enum MemberRole {
+  OWNER  // Tashkilot egasi — hammasi
+  ADMIN  // To'liq boshqaruv, o'chirishdan tashqari
+  STAFF  // Cheklangan (mahsulot yaratish, tahrirlash)
+}
+
+// ============================================
+// INVITATION (xodim taklifi)
+// ============================================
+
+model Invitation {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  senderId String
+  sender   User   @relation("InviteSender", fields: [senderId], references: [id])
+
+  email     String
+  role      MemberRole @default(STAFF)
+  token     String     @unique
+  status    InviteStatus @default(PENDING)
+
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  acceptedAt DateTime?
+
+  @@index([email])
+  @@index([token])
+  @@index([organizationId])
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  REVOKED
+}
+
+// ============================================
+// PRODUCT (endi Organization ga tegishli)
+// ============================================
+
+model Product {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Kim yaratgan (audit uchun)
+  createdById String?
+
+  title       String
+  description String  @db.Text
+  category    String
+  brand       String?
+  sku         String? @unique
+  barcode     String?
+
+  basePrice      Decimal  @db.Decimal(15, 2)
+  suggestedPrice Decimal? @db.Decimal(15, 2)
+  currency       String   @default("UZS")
+  stock          Int      @default(0)
+
+  attributes Json @default("{}")
+  status     ProductStatus @default(DRAFT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  images   ProductImage[]
+  listings Listing[]
+  aiJobs   AiJob[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([category])
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+// ============================================
+// PRODUCT IMAGES
+// ============================================
+
+model ProductImage {
+  id          String  @id @default(cuid())
+  productId   String
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  url         String
+  originalUrl String
+  fileKey     String?
+
+  isAiProcessed Boolean      @default(false)
+  aiJobId       String?
+  variant       ImageVariant @default(ORIGINAL)
+
+  order     Int     @default(0)
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@index([variant])
+}
+
+enum ImageVariant {
+  ORIGINAL
+  UZUM
+  OZON
+  WB
+  YANDEX
+}
+
+// ============================================
+// LISTING
+// ============================================
+
+model Listing {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  marketplace Marketplace
+  externalId  String?
+  status      ListingStatus @default(DRAFT)
+
+  title       String
+  description String  @db.Text
+  seoKeywords String? @db.Text
+
+  price         Decimal  @db.Decimal(15, 2)
+  discountPrice Decimal? @db.Decimal(15, 2)
+
+  views   Int     @default(0)
+  sales   Int     @default(0)
+  revenue Decimal @default(0) @db.Decimal(15, 2)
+
+  lastSyncedAt DateTime?
+  errorMessage String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  analytics AnalyticsSnapshot[]
+
+  @@unique([productId, marketplace])
+  @@index([status])
+  @@index([marketplace])
+}
+
+enum Marketplace {
+  UZUM
+  OZON
+  WB
+  YANDEX
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING
+  PUBLISHED
+  REJECTED
+  PAUSED
+  ERROR
+}
+
+// ============================================
+// MARKETPLACE CREDENTIALS (endi Org ga)
+// ============================================
+
+model UserMarketplace {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  marketplace    Marketplace
+
+  apiKey    String  @db.Text
+  apiSecret String? @db.Text
+  shopId    String?
+  shopName  String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, marketplace])
+  @@index([organizationId])
+}
+
+// ============================================
+// AI JOBS
+// ============================================
+
+model AiJob {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  type     AiJobType
+  status   JobStatus @default(PENDING)
+  provider String    @default("higgsfield")
+
+  inputUrl  String?
+  outputUrl String?
+
+  providerJobId String?
+  metadata      Json    @default("{}")
+
+  error String? @db.Text
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
+}
+
+enum AiJobType {
+  BACKGROUND_REMOVE
+  UPSCALE
+  OUTPAINT
+  GENERATE
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+model AnalyticsSnapshot {
+  id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  date      DateTime @db.Date
+  views     Int      @default(0)
+  addToCart Int      @default(0)
+  sales     Int      @default(0)
+  revenue   Decimal  @default(0) @db.Decimal(15, 2)
+
+  createdAt DateTime @default(now())
+
+  @@unique([listingId, date])
+  @@index([listingId])
+  @@index([date])
+}

@@ -1,0 +1,16 @@
+export function formatPrice(price: number | string, currency = 'UZS') {
+  const num = typeof price === 'string' ? parseFloat(price) : price;
+  return new Intl.NumberFormat('uz-UZ').format(num) + ' ' + currency;
+}
+
+export function formatDate(date: string | Date) {
+  return new Date(date).toLocaleDateString('uz-UZ', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+export function truncate(text: string, max: number) {
+  return text.length > max ? text.slice(0, max) + '…' : text;
+}

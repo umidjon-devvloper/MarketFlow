@@ -1,0 +1,40 @@
+---
+import '../styles/globals.css';
+
+export interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'MarketFlow — AI savdo yordamchisi',
+  description = "Bir mahsulot rasmidan Uzum Market, Ozon, Wildberries va Yandex Market uchun tayyor e'lon — AI sarlavha, tavsif, narx va kadr tavsiyasi bilan.",
+} = Astro.props;
+
+// Theme (light/dark) init — paint'dan oldin ishlaydi, xato tema chaqnashini oldini oladi.
+const themeInit = `(function(){try{var t=localStorage.getItem('theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark');else document.documentElement.classList.remove('dark');}catch(e){}})();`;
+---
+
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/og.svg" />
+
+    <!-- Google Fonts: Fraunces / Manrope / JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script is:inline set:html={themeInit} />
+  </head>
+  <body class="font-sans min-h-screen bg-canvas text-ink antialiased overflow-x-hidden">
+    <slot />
+  </body>
+</html>

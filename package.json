@@ -1,0 +1,35 @@
+{
+  "name": "marketflow",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "db:generate": "cd apps/api && npx prisma generate",
+    "db:migrate": "cd apps/api && npx prisma migrate dev",
+    "db:studio": "cd apps/api && npx prisma studio",
+    "db:push": "cd apps/api && npx prisma db push",
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:api": "cd apps/api && npm run dev",
+    "dev:mobile": "cd apps/mobile && npm start"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.0",
+    "sharp": "^0.35.3",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "overrides": {
+    "@types/react": "18.2.79",
+    "@types/react-dom": "18.2.25"
+  },
+  "packageManager": "npm@10.0.0",
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}
