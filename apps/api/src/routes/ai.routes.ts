@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { orgMiddleware } from '../middleware/org.middleware';
 import * as aiController from '../controllers/ai.controller';
 
 const router = Router();
-router.use(authMiddleware);
+router.use(authMiddleware, orgMiddleware);
 
 // Rasm AI
 router.post('/remove-background', aiController.removeBackgroundController);

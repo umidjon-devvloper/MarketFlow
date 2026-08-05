@@ -4,7 +4,25 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "dist/**", "!.next/cache/**"]
+      "outputs": [".next/**", "dist/**", "!.next/cache/**"],
+      "env": [
+        "DATABASE_URL",
+        "DIRECT_URL",
+        "PORT",
+        "NODE_ENV",
+        "JWT_SECRET",
+        "JWT_REFRESH_SECRET",
+        "JWT_EXPIRES_IN",
+        "JWT_REFRESH_EXPIRES_IN",
+        "CORS_ORIGIN",
+        "UPLOADTHING_TOKEN",
+        "UPLOADTHING_SECRET",
+        "HIGGSFIELD_API_KEY",
+        "HIGGSFIELD_API_URL",
+        "UZUM_API_URL",
+        "ENCRYPTION_KEY",
+        "NEXT_PUBLIC_API_URL"
+      ]
     },
     "dev": {
       "cache": false,

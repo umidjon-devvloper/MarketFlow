@@ -24,10 +24,10 @@ const scrapeSchema = z.object({
 export async function getProductListings(req: Request, res: Response, next: NextFunction) {
   try {
     const { productId } = req.params;
-    const userId = req.user!.userId;
+    const organizationId = req.organization!.id;
 
     const product = await prisma.product.findFirst({
-      where: { id: productId, userId },
+      where: { id: productId, organizationId },
       include: {
         listings: true,
         images: { orderBy: { order: 'asc' } },
@@ -57,12 +57,12 @@ export async function getProductListings(req: Request, res: Response, next: Next
 export async function updateListing(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    const userId = req.user!.userId;
+    const organizationId = req.organization!.id;
     const data = updateListingSchema.parse(req.body);
 
     // Egalik tekshiruvi
     const existing = await prisma.listing.findFirst({
-      where: { id, product: { userId } },
+      where: { id, product: { organizationId } },
     });
     if (!existing) throw new HttpError(404, 'Kartochka topilmadi');
 
@@ -84,10 +84,10 @@ export async function updateListing(req: Request, res: Response, next: NextFunct
 export async function exportListing(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    const userId = req.user!.userId;
+    const organizationId = req.organization!.id;
 
     const listing = await prisma.listing.findFirst({
-      where: { id, product: { userId } },
+      where: { id, product: { organizationId } },
       include: {
         product: {
           include: {
@@ -157,10 +157,10 @@ export async function scrapeFromUzum(req: Request, res: Response, next: NextFunc
 export async function deleteListing(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    const userId = req.user!.userId;
+    const organizationId = req.organization!.id;
 
     const existing = await prisma.listing.findFirst({
-      where: { id, product: { userId } },
+      where: { id, product: { organizationId } },
       select: { id: true },
     });
     if (!existing) throw new HttpError(404, 'Kartochka topilmadi');

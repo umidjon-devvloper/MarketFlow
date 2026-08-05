@@ -41,12 +41,13 @@ export async function removeBackgroundController(
   try {
     const { imageId } = removeBackgroundSchema.parse(req.body);
     const userId = req.user!.userId;
+    const organizationId = req.organization!.id;
 
     // Rasmni topish (egalik tekshiruvi)
     const image = await prisma.productImage.findFirst({
       where: {
         id: imageId,
-        product: { userId },
+        product: { organizationId },
       },
     });
     if (!image) throw new HttpError(404, 'Rasm topilmadi');
@@ -121,9 +122,10 @@ export async function upscaleController(req: Request, res: Response, next: NextF
   try {
     const { imageId, scale } = upscaleSchema.parse(req.body);
     const userId = req.user!.userId;
+    const organizationId = req.organization!.id;
 
     const image = await prisma.productImage.findFirst({
-      where: { id: imageId, product: { userId } },
+      where: { id: imageId, product: { organizationId } },
     });
     if (!image) throw new HttpError(404, 'Rasm topilmadi');
 
@@ -253,10 +255,10 @@ export async function generateListingsController(
 ) {
   try {
     const { productId, marketplaces } = generateTextSchema.parse(req.body);
-    const userId = req.user!.userId;
+    const organizationId = req.organization!.id;
 
     const product = await prisma.product.findFirst({
-      where: { id: productId, userId },
+      where: { id: productId, organizationId },
     });
     if (!product) throw new HttpError(404, 'Mahsulot topilmadi');
 

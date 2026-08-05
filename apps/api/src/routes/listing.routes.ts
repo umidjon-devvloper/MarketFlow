@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { orgMiddleware } from '../middleware/org.middleware';
 import * as listingController from '../controllers/listing.controller';
 
 const router = Router();
-router.use(authMiddleware);
+router.use(authMiddleware, orgMiddleware);
 
 router.get('/product/:productId', listingController.getProductListings);
 router.patch('/:id', listingController.updateListing);
