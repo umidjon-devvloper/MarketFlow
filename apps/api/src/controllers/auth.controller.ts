@@ -5,9 +5,19 @@ import { prisma } from '../utils/prisma';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { HttpError } from '../middleware/error.middleware';
 
+/**
+ * Parol talablari: kamida 8 belgi, harf va raqam bo'lsin.
+ * Ilgari 6 belgi yetardi — "test1234" kabi parollar juda oson topilardi.
+ */
+const passwordSchema = z
+  .string()
+  .min(8, 'Parol kamida 8 belgi bo\'lishi kerak')
+  .refine((v) => /[a-zA-Z]/.test(v), 'Parolda kamida bitta harf bo\'lsin')
+  .refine((v) => /[0-9]/.test(v), 'Parolda kamida bitta raqam bo\'lsin');
+
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: passwordSchema,
   fullName: z.string().min(2),
   phone: z.string().optional(),
   // Ixtiyoriy: agar taklif orqali kelayotgan bo'lsa
@@ -124,11 +134,13 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       userId: result.user.id,
       email: result.user.email,
       role: 'SELLER', // legacy field
+      tv: 0,
     });
     const refreshToken = signRefreshToken({
       userId: result.user.id,
       email: result.user.email,
       role: 'SELLER',
+      tv: 0,
     });
 
     res.status(201).json({
@@ -176,11 +188,13 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       userId: user.id,
       email: user.email,
       role: 'SELLER',
+      tv: user.tokenVersion,
     });
     const refreshToken = signRefreshToken({
       userId: user.id,
       email: user.email,
       role: 'SELLER',
+      tv: user.tokenVersion,
     });
 
     res.json({
@@ -211,16 +225,77 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
     if (!refreshToken) throw new HttpError(400, 'refreshToken kerak');
 
     const payload = verifyRefreshToken(refreshToken);
+
+    // Token avlodi bazadagi bilan mos kelmasa — foydalanuvchi chiqib ketgan
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { tokenVersion: true, isActive: true },
+    });
+    if (!user || !user.isActive) throw new HttpError(401, 'Hisob topilmadi yoki faol emas');
+    if ((payload.tv ?? 0) !== user.tokenVersion) {
+      throw new HttpError(401, 'Sessiya tugagan — qaytadan kiring');
+    }
+
     // Dekodlangan payloadda eski iat/exp bor — ularni signAccessToken'ga
     // uzatib bo'lmaydi (expiresIn bilan to'qnashadi), toza payload tuzamiz
     const accessToken = signAccessToken({
       userId: payload.userId,
       email: payload.email,
       role: payload.role,
+      tv: user.tokenVersion,
     });
     res.json({ accessToken });
   } catch (err) {
-    next(new HttpError(401, 'Refresh token yaroqsiz'));
+    next(err instanceof HttpError ? err : new HttpError(401, 'Refresh token yaroqsiz'));
+  }
+}
+
+/**
+ * POST /api/auth/logout
+ * Token avlodini oshiradi — barcha qurilmalardagi refresh tokenlar bekor bo'ladi.
+ */
+export async function logout(req: Request, res: Response, next: NextFunction) {
+  try {
+    await prisma.user.update({
+      where: { id: req.user!.userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * PATCH /api/auth/password
+ * Parolni almashtirish — eski parol tekshiriladi, keyin barcha sessiyalar yopiladi.
+ */
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordSchema,
+});
+
+export async function changePassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = changePasswordSchema.parse(req.body);
+    const userId = req.user!.userId;
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new HttpError(404, 'Foydalanuvchi topilmadi');
+
+    const isValid = await bcrypt.compare(data.currentPassword, user.password);
+    if (!isValid) throw new HttpError(401, 'Joriy parol noto\'g\'ri');
+
+    const hashed = await bcrypt.hash(data.newPassword, 10);
+    await prisma.user.update({
+      where: { id: userId },
+      // Parol o'zgarganda eski sessiyalar ham yopilishi kerak
+      data: { password: hashed, tokenVersion: { increment: 1 } },
+    });
+
+    res.json({ success: true, message: 'Parol almashtirildi — qaytadan kiring' });
+  } catch (err) {
+    next(err);
   }
 }
 

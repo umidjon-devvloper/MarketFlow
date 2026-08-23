@@ -10,6 +10,7 @@ router.get('/product/:productId', listingController.getProductListings);
 router.patch('/:id', listingController.updateListing);
 router.delete('/:id', listingController.deleteListing);
 router.get('/:id/export', listingController.exportListing);
+router.post('/:id/copy-to', listingController.copyListingTo);
 router.post('/scrape/uzum', listingController.scrapeFromUzum);
 
 export default router;

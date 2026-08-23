@@ -16,21 +16,25 @@ datasource db {
 // ============================================
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  fullName  String
-  phone     String?
-  avatar    String?
-  isActive  Boolean  @default(true)
+  id       String  @id @default(cuid())
+  email    String  @unique
+  password String
+  fullName String
+  phone    String?
+  avatar   String?
+  isActive Boolean @default(true)
+
+  // Har "Chiqish" da oshadi — eski refresh tokenlar shu bilan bekor qilinadi
+  tokenVersion Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Yangi: tashkilotlar
-  memberships     Membership[]
-  ownedOrgs       Organization[] @relation("OrgOwner")
-  sentInvites     Invitation[]   @relation("InviteSender")
-  aiJobs          AiJob[]
+  memberships Membership[]
+  ownedOrgs   Organization[] @relation("OrgOwner")
+  sentInvites Invitation[]   @relation("InviteSender")
+  aiJobs      AiJob[]
 
   @@index([email])
 }
@@ -40,11 +44,11 @@ model User {
 // ============================================
 
 model Organization {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
-  slug        String   @unique // URL uchun
+  slug        String  @unique // URL uchun
   logo        String?
-  description String?  @db.Text
+  description String? @db.Text
 
   ownerId String
   owner   User   @relation("OrgOwner", fields: [ownerId], references: [id])
@@ -53,10 +57,25 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ── Qoldiq xabarnomasi (email) ──
+  /// Qoldiq kamayganda email yuborilsinmi
+  stockAlertsEnabled Boolean  @default(true)
+  /// Shu sondan kam qolganda ogohlantiramiz
+  lowStockThreshold  Int      @default(5)
+  /// Qo'shimcha qabul qiluvchilar. Bo'sh bo'lsa — tashkilot egasining emaili
+  stockAlertEmails   String[] @default([])
+
   members          Membership[]
   invitations      Invitation[]
   products         Product[]
   userMarketplaces UserMarketplace[]
+  aiJobs           AiJob[]
+  stockAlerts      StockAlert[]
+  snapshots        MarketplaceSnapshot[]
+  stockCache       MarketplaceStock[]
+  syncRuns         SyncRun[]
+  publishJobs      PublishJob[]
+  orders           MarketplaceOrder[]
 
   @@index([ownerId])
   @@index([slug])
@@ -84,9 +103,9 @@ model Membership {
 }
 
 enum MemberRole {
-  OWNER  // Tashkilot egasi — hammasi
-  ADMIN  // To'liq boshqaruv, o'chirishdan tashqari
-  STAFF  // Cheklangan (mahsulot yaratish, tahrirlash)
+  OWNER // Tashkilot egasi — hammasi
+  ADMIN // To'liq boshqaruv, o'chirishdan tashqari
+  STAFF // Cheklangan (mahsulot yaratish, tahrirlash)
 }
 
 // ============================================
@@ -101,13 +120,13 @@ model Invitation {
   senderId String
   sender   User   @relation("InviteSender", fields: [senderId], references: [id])
 
-  email     String
-  role      MemberRole @default(STAFF)
-  token     String     @unique
-  status    InviteStatus @default(PENDING)
+  email  String
+  role   MemberRole   @default(STAFF)
+  token  String       @unique
+  status InviteStatus @default(PENDING)
 
-  createdAt DateTime  @default(now())
-  expiresAt DateTime
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
   acceptedAt DateTime?
 
   @@index([email])
@@ -139,7 +158,7 @@ model Product {
   description String  @db.Text
   category    String
   brand       String?
-  sku         String? @unique
+  sku         String?
   barcode     String?
 
   basePrice      Decimal  @db.Decimal(15, 2)
@@ -147,16 +166,20 @@ model Product {
   currency       String   @default("UZS")
   stock          Int      @default(0)
 
-  attributes Json @default("{}")
+  attributes Json          @default("{}")
   status     ProductStatus @default(DRAFT)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  images   ProductImage[]
-  listings Listing[]
-  aiJobs   AiJob[]
+  images      ProductImage[]
+  listings    Listing[]
+  aiJobs      AiJob[]
+  publishJobs PublishJob[]
 
+  // SKU butun tizim bo'ylab emas, tashkilot ichida unikal bo'lishi kerak —
+  // aks holda boshqa sotuvchi band qilgan artikulni ishlata olmaysiz
+  @@unique([organizationId, sku])
   @@index([organizationId])
   @@index([status])
   @@index([category])
@@ -173,9 +196,9 @@ enum ProductStatus {
 // ============================================
 
 model ProductImage {
-  id          String  @id @default(cuid())
-  productId   String
-  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   url         String
   originalUrl String
@@ -288,6 +311,10 @@ model AiJob {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Kunlik limit va xarajat hisobini tashkilot bo'yicha yuritamiz
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
@@ -301,6 +328,10 @@ model AiJob {
   providerJobId String?
   metadata      Json    @default("{}")
 
+  // Xarajat kuzatuvi
+  tokensUsed Int?
+  costUsd    Decimal? @db.Decimal(10, 6)
+
   error String? @db.Text
 
   createdAt   DateTime  @default(now())
@@ -309,6 +340,7 @@ model AiJob {
   @@index([userId])
   @@index([productId])
   @@index([status])
+  @@index([organizationId, createdAt])
 }
 
 enum AiJobType {
@@ -316,6 +348,8 @@ enum AiJobType {
   UPSCALE
   OUTPAINT
   GENERATE
+  ADAPT_IMAGE // rasmni marketplace o'lchamiga moslashtirish
+  FIELD_FILL // rasmga qarab kartochka maydonlarini to'ldirish
 }
 
 enum JobStatus {
@@ -330,9 +364,9 @@ enum JobStatus {
 // ============================================
 
 model AnalyticsSnapshot {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   listingId String
-  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
 
   date      DateTime @db.Date
   views     Int      @default(0)
@@ -345,4 +379,230 @@ model AnalyticsSnapshot {
   @@unique([listingId, date])
   @@index([listingId])
   @@index([date])
+}
+
+// ============================================
+// STOCK ALERT (kam qolgan mahsulot xabarnomasi)
+// ============================================
+
+/// Bir mahsulot uchun oxirgi yuborilgan ogohlantirish.
+/// Har tekshiruvda qayta email yubormaslik uchun kerak — xabar faqat
+/// qoldiq birinchi marta chegaradan tushganda yoki yana kamayganda ketadi.
+model StockAlert {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  marketplace Marketplace
+  /// Marketplace'dagi artikul (SKU / vendorCode / barcode)
+  sku         String
+  name        String?
+
+  /// Oxirgi xabarda ko'rsatilgan qoldiq
+  lastAmount    Int
+  /// O'sha paytdagi chegara — sozlama o'zgarsa qayta ogohlantirish uchun
+  lastThreshold Int      @default(0)
+  lastSentAt    DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, marketplace, sku])
+  @@index([organizationId])
+}
+
+// ============================================
+// SYNC — marketplace ma'lumotining mahalliy nusxasi
+// ============================================
+
+/// Kunlik kesim: har bir marketplace bo'yicha buyurtma, daromad va qoldiq holati.
+///
+/// Nega kerak: marketplace API'lari sekin va qattiq limitlangan (WB statistikasi —
+/// daqiqasiga 1 ta so'rov). Sahifa har ochilganda jonli so'rov yuborish
+/// mumkin emas. Cron kuniga bir necha marta shu jadvalni to'ldiradi,
+/// sahifalar esa bazadan o'qiydi — darhol va limitsiz. Yon foyda: tarix
+/// to'planadi, ya'ni trend va "o'tgan haftaga nisbatan" hisoblanadigan bo'ladi.
+model MarketplaceSnapshot {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  marketplace    Marketplace
+
+  /// Kesim sanasi (kun aniqligida) — bir kunga bitta yozuv
+  date DateTime @db.Date
+
+  /// So'nggi 30 kunlik buyurtmalar va daromad (marketplace summary'sidan)
+  orders   Int     @default(0)
+  revenue  Decimal @default(0) @db.Decimal(15, 2)
+  currency String  @default("UZS")
+
+  /// Qoldiq kesimi — sync paytidagi holat
+  skuCount   Int @default(0)
+  totalStock Int @default(0)
+  lowStock   Int @default(0)
+  outOfStock Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, marketplace, date])
+  @@index([organizationId, date])
+}
+
+/// Joriy qoldiq — SKU bo'yicha, marketplace'dan o'qib olingan nusxa.
+///
+/// "Qoldiqlar" jadvali va kam qolgan mahsulot xabarnomasi shu yerdan o'qiydi.
+model MarketplaceStock {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  marketplace    Marketplace
+
+  sku       String
+  name      String?
+  amount    Int     @default(0)
+  warehouse String?
+
+  syncedAt DateTime @default(now())
+
+  @@unique([organizationId, marketplace, sku])
+  @@index([organizationId, marketplace])
+}
+
+/// Har bir sinxronizatsiya urinishining natijasi — UI'da "oxirgi yangilanish"
+/// va nima uchun ishlamaganini ko'rsatish uchun.
+model SyncRun {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  marketplace    Marketplace
+
+  status     SyncStatus
+  /// Muvaffaqiyatsiz bo'lsa — sabab (marketplace javobidan)
+  error      String?
+  /// O'qib olingan SKU soni
+  itemCount  Int        @default(0)
+  durationMs Int        @default(0)
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([organizationId, marketplace, startedAt])
+}
+
+enum SyncStatus {
+  OK
+  PARTIAL
+  FAILED
+}
+
+// ============================================
+// PUBLISH NAVBATI
+// ============================================
+
+/// Marketplace'ga joylash vazifasi.
+///
+/// Nega navbat kerak: joylash bitta HTTP so'rov emas. Ozon va WB tovarni
+/// asinxron qabul qiladi — javob "qabul qilindi" deydi, natija esa bir necha
+/// daqiqadan keyin ma'lum bo'ladi. WB'da ustiga rasmlar alohida qadamda,
+/// kartochka sinxronlangandan keyin biriktiriladi (30 daqiqagacha).
+///
+/// Bunday oqimni brauzerda kutib turib bo'lmaydi: 200 ta tovar yuklamoqchi
+/// bo'lgan sotuvchi sahifani ochiq tutib o'tirardi va bitta yopilgan tab
+/// butun ishni to'xtatardi. Shuning uchun vazifa bazaga yoziladi, cron uni
+/// bosqichma-bosqich olib boradi, sahifa esa faqat holatni ko'rsatadi.
+model PublishJob {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  marketplace Marketplace
+  status      PublishJobStatus @default(QUEUED)
+
+  /// Marketplace tomonidagi vazifa/tovar identifikatori (Ozon task_id, WB vendorCode)
+  externalId String?
+  /// Sotuvchiga ko'rsatiladigan oxirgi xabar
+  message    String? @db.Text
+  /// Ketdi, lekin e'tibor talab qiladi (barkod generatsiya qilindi va h.k.)
+  warnings   String[] @default([])
+
+  /// Nechinchi urinish. Vaqtinchalik xatolarda qayta uriniladi, cheksiz emas
+  attempts    Int       @default(0)
+  /// Shu vaqtdan oldin qo'l tegizilmaydi — limitga urilganda orqaga chekinish
+  nextTryAt   DateTime?
+
+  /// Kim boshlagan (audit uchun)
+  createdById String?
+
+  createdAt  DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  /// Bir mahsulot bitta marketplace'ga bir vaqtda bir marta turadi —
+  /// tugma ikki marta bosilsa ikkita kartochka yaratilib ketmasin
+  @@unique([productId, marketplace])
+  @@index([organizationId, status])
+  @@index([status, nextTryAt])
+}
+
+enum PublishJobStatus {
+  /// Navbatda kutyapti
+  QUEUED
+  /// Hozir yuborilyapti
+  RUNNING
+  /// Yuborildi, marketplace javobini kutyapmiz (Ozon import, WB sinxronizatsiyasi)
+  PENDING
+  /// Muvaffaqiyatli yakunlandi
+  DONE
+  /// Xato — sabab `message` da
+  FAILED
+  /// Foydalanuvchi bekor qildi
+  CANCELLED
+}
+
+// ============================================
+// BUYURTMALAR KESHI
+// ============================================
+
+/// Marketplace buyurtmasining mahalliy nusxasi.
+///
+/// Nega kesh: buyurtmalarni jonli so'rash mumkin emas. WB statistikasi
+/// daqiqasiga 1 ta so'rovga ruxsat beradi, Uzum "too many requests" beradi,
+/// Yandex sahifalab qaytaradi. To'rttala bozorni sahifa har ochilganda
+/// so'rasak, sotuvchi 10-15 soniya kutadi va bir necha odam bir vaqtda
+/// ishlasa hammasi 429 ga uriladi.
+///
+/// Shuning uchun cron ularni oldindan o'qib shu jadvalga yozadi, sahifa esa
+/// bazadan o'qiydi — darhol, limitsiz va to'rttala bozorni bitta ro'yxatda
+/// saralab bo'ladi (bu jonli so'rovlarda umuman imkonsiz edi).
+model MarketplaceOrder {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  marketplace    Marketplace
+
+  /// Marketplace tomonidagi buyurtma raqami
+  externalId String
+  /// Buyurtma sanasi. Marketplace bermasa — null, ro'yxat oxirida turadi
+  orderedAt  DateTime?
+  /// Marketplace o'z atamasi bilan ("Yangi", "Собран", "delivered"...)
+  status     String?
+
+  itemsCount Int     @default(0)
+  total      Decimal @default(0) @db.Decimal(15, 2)
+  currency   String  @default("UZS")
+
+  /// Pozitsiyalar — NormalizedOrderItem[] ko'rinishida
+  items Json @default("[]")
+
+  syncedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@unique([organizationId, marketplace, externalId])
+  @@index([organizationId, orderedAt])
+  @@index([organizationId, marketplace])
 }

@@ -12,10 +12,13 @@ import {
   DollarSign,
   Loader2,
   AlertCircle,
+  Clock,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { formatPrice } from '@/lib/utils';
+import { SkeletonRows } from '@/components/Skeleton';
+import { RemoteImage } from '@/components/RemoteImage';
 
 const MP_LABELS: Record<string, string> = {
   UZUM: 'Uzum Market',
@@ -67,6 +70,16 @@ type TabKey = (typeof TABS)[number]['key'];
 
 const PAGE_SIZE = 20;
 
+/** "3 soat oldin" ko'rinishidagi vaqt */
+function timeAgo(iso: string): string {
+  const diffMin = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (diffMin < 1) return 'hozirgina';
+  if (diffMin < 60) return `${diffMin} daqiqa oldin`;
+  const hours = Math.round(diffMin / 60);
+  if (hours < 24) return `${hours} soat oldin`;
+  return `${Math.round(hours / 24)} kun oldin`;
+}
+
 export default function MarketplaceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const currentOrgId = useAuthStore((s) => s.currentOrgId);
@@ -101,6 +114,9 @@ export default function MarketplaceDetailPage() {
 
   const items: any[] = dataQuery.data?.items || [];
   const total: number | undefined = dataQuery.data?.total;
+  // Qoldiqlar bazadan o'qiladi — foydalanuvchi qachonligini bilishi kerak
+  const cachedAt: string | undefined =
+    dataQuery.data?.source === 'cache' ? dataQuery.data?.syncedAt : undefined;
   const hasNext = total !== undefined ? (page + 1) * PAGE_SIZE < total : items.length === PAGE_SIZE;
 
   const switchTab = (t: TabKey) => {
@@ -112,7 +128,7 @@ export default function MarketplaceDetailPage() {
     <div>
       <Link
         href="/dashboard/marketplaces"
-        className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-4"
+        className="inline-flex items-center gap-1 text-sm text-ink-soft hover:text-ink mb-4"
       >
         <ArrowLeft className="w-4 h-4" />
         Marketplace'lar
@@ -121,7 +137,7 @@ export default function MarketplaceDetailPage() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold">{mpLabel || 'Marketplace'}</h1>
         {cred?.shopName && (
-          <p className="text-slate-600 mt-1">
+          <p className="text-ink-soft mt-1">
             Do'kon: {cred.shopName}
             {cred.shopId ? ` (ID: ${cred.shopId})` : ''}
           </p>
@@ -130,10 +146,10 @@ export default function MarketplaceDetailPage() {
 
       {/* 30 kunlik xulosa */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white p-5 rounded-xl border">
+        <div className="card p-5">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-slate-600">Buyurtmalar (30 kun)</p>
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
+            <p className="text-sm text-ink-soft">Buyurtmalar (30 kun)</p>
+            <div className="p-2 rounded-lg bg-accent-soft text-accent">
               <ShoppingCart className="w-4 h-4" />
             </div>
           </div>
@@ -141,10 +157,10 @@ export default function MarketplaceDetailPage() {
             {summaryQuery.isLoading ? '...' : summaryQuery.data?.orders ?? '—'}
           </p>
         </div>
-        <div className="bg-white p-5 rounded-xl border">
+        <div className="card p-5">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-slate-600">Daromad (30 kun)</p>
-            <div className="p-2 rounded-lg bg-green-50 text-green-600">
+            <p className="text-sm text-ink-soft">Daromad (30 kun)</p>
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
@@ -158,7 +174,7 @@ export default function MarketplaceDetailPage() {
         </div>
       </div>
       {summaryQuery.isError && (
-        <p className="text-sm text-amber-600 -mt-4 mb-6 flex items-center gap-1">
+        <p className="text-sm text-amber-600 dark:text-amber-400 -mt-4 mb-6 flex items-center gap-1">
           <AlertCircle className="w-4 h-4" />
           {(summaryQuery.error as any)?.response?.status === 429
             ? "Marketplace so'rovlar limitiga yetdi — bir daqiqadan so'ng sahifani yangilang"
@@ -167,7 +183,7 @@ export default function MarketplaceDetailPage() {
       )}
 
       {/* Tablar */}
-      <div className="bg-white rounded-xl border">
+      <div className="card">
         <div className="flex border-b">
           {TABS.map((t) => {
             const Icon = t.icon;
@@ -177,8 +193,8 @@ export default function MarketplaceDetailPage() {
                 onClick={() => switchTab(t.key)}
                 className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 -mb-px transition ${
                   tab === t.key
-                    ? 'border-blue-600 text-blue-700'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                    ? 'border-accent text-accent'
+                    : 'border-transparent text-ink-soft hover:text-ink'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -188,22 +204,28 @@ export default function MarketplaceDetailPage() {
           })}
         </div>
 
+        {cachedAt && !dataQuery.isLoading && (
+          <p className="px-5 pt-3 -mb-1 text-xs text-muted flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5" />
+            Bazadan: {timeAgo(cachedAt)} yangilangan. Sozlamalarda qo'lda yangilash mumkin.
+          </p>
+        )}
+
         {dataQuery.isLoading ? (
-          <div className="p-12 flex items-center justify-center gap-2 text-slate-500">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Yuklanmoqda...
+          <div role="status" aria-label="Ma'lumot yuklanmoqda">
+            <SkeletonRows rows={5} />
           </div>
         ) : dataQuery.isError ? (
           <div className="p-12 text-center">
             <AlertCircle className="w-8 h-8 mx-auto text-red-400 mb-2" />
-            <p className="text-slate-700 font-medium mb-1">Ma'lumot olib bo'lmadi</p>
-            <p className="text-sm text-slate-500">
+            <p className="text-ink-soft font-medium mb-1">Ma'lumot olib bo'lmadi</p>
+            <p className="text-sm text-muted">
               {(dataQuery.error as any)?.response?.data?.error ||
                 (dataQuery.error as Error)?.message}
             </p>
           </div>
         ) : items.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-sm">Hozircha ma'lumot yo'q</div>
+          <div className="p-12 text-center text-muted text-sm">Hozircha ma'lumot yo'q</div>
         ) : (
           <div className="overflow-x-auto">
             {tab === 'products' && <ProductsTable items={items} currency={currency} />}
@@ -215,7 +237,7 @@ export default function MarketplaceDetailPage() {
         {/* Sahifalash */}
         {(page > 0 || hasNext) && !dataQuery.isError && (
           <div className="p-4 border-t flex items-center justify-between">
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-ink-soft">
               Sahifa {page + 1}
               {total !== undefined ? ` — jami ${total} ta` : ''}
               {dataQuery.isFetching && ' · yangilanmoqda...'}
@@ -224,14 +246,14 @@ export default function MarketplaceDetailPage() {
               <button
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-50 hover:bg-slate-50"
+                className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-50 hover:bg-panel"
               >
                 Oldingi
               </button>
               <button
                 onClick={() => setPage((p) => p + 1)}
                 disabled={!hasNext}
-                className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-50 hover:bg-slate-50"
+                className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-50 hover:bg-panel"
               >
                 Keyingi
               </button>
@@ -247,7 +269,7 @@ function ProductsTable({ items, currency }: { items: MpProduct[]; currency: stri
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="text-left text-slate-500 border-b">
+        <tr className="text-left text-muted border-b">
           <th className="px-4 py-3 font-medium">Mahsulot</th>
           <th className="px-4 py-3 font-medium">SKU</th>
           <th className="px-4 py-3 font-medium text-right">Narx</th>
@@ -257,27 +279,27 @@ function ProductsTable({ items, currency }: { items: MpProduct[]; currency: stri
       </thead>
       <tbody className="divide-y">
         {items.map((p, i) => (
-          <tr key={`${p.id}-${i}`} className="hover:bg-slate-50">
+          <tr key={`${p.id}-${i}`} className="hover:bg-panel">
             <td className="px-4 py-3">
               <div className="flex items-center gap-3">
                 {p.image ? (
-                  <img src={p.image} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                  <RemoteImage src={p.image} alt="" sizes="40px" className="w-10 h-10 rounded-lg flex-shrink-0" />
                 ) : (
-                  <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Package className="w-4 h-4 text-slate-400" />
+                  <div className="w-10 h-10 bg-panel rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Package className="w-4 h-4 text-muted" />
                   </div>
                 )}
                 <span className="font-medium max-w-md truncate block">{p.name}</span>
               </div>
             </td>
-            <td className="px-4 py-3 text-slate-600">{p.sku || p.barcode || '—'}</td>
+            <td className="px-4 py-3 text-ink-soft">{p.sku || p.barcode || '—'}</td>
             <td className="px-4 py-3 text-right font-medium">
               {p.price !== undefined ? formatPrice(p.price, currency) : '—'}
             </td>
             <td className="px-4 py-3 text-right">{p.stock ?? '—'}</td>
             <td className="px-4 py-3">
               {p.status ? (
-                <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
+                <span className="px-2 py-0.5 rounded text-xs bg-panel text-ink-soft">
                   {p.status}
                 </span>
               ) : (
@@ -295,7 +317,7 @@ function OrdersTable({ items, currency }: { items: MpOrder[]; currency: string }
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="text-left text-slate-500 border-b">
+        <tr className="text-left text-muted border-b">
           <th className="px-4 py-3 font-medium">Buyurtma</th>
           <th className="px-4 py-3 font-medium">Sana</th>
           <th className="px-4 py-3 font-medium">Holat</th>
@@ -305,9 +327,9 @@ function OrdersTable({ items, currency }: { items: MpOrder[]; currency: string }
       </thead>
       <tbody className="divide-y">
         {items.map((o, i) => (
-          <tr key={`${o.id}-${i}`} className="hover:bg-slate-50">
+          <tr key={`${o.id}-${i}`} className="hover:bg-panel">
             <td className="px-4 py-3 font-medium">{o.id}</td>
-            <td className="px-4 py-3 text-slate-600">
+            <td className="px-4 py-3 text-ink-soft">
               {o.date
                 ? new Date(o.date).toLocaleDateString('uz-UZ', {
                     year: 'numeric',
@@ -318,7 +340,7 @@ function OrdersTable({ items, currency }: { items: MpOrder[]; currency: string }
             </td>
             <td className="px-4 py-3">
               {o.status ? (
-                <span className="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700">
+                <span className="px-2 py-0.5 rounded text-xs bg-panel text-ink-soft">
                   {o.status}
                 </span>
               ) : (
@@ -340,7 +362,7 @@ function StocksTable({ items }: { items: MpStock[] }) {
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="text-left text-slate-500 border-b">
+        <tr className="text-left text-muted border-b">
           <th className="px-4 py-3 font-medium">SKU</th>
           <th className="px-4 py-3 font-medium">Nomi</th>
           <th className="px-4 py-3 font-medium">Ombor</th>
@@ -349,10 +371,10 @@ function StocksTable({ items }: { items: MpStock[] }) {
       </thead>
       <tbody className="divide-y">
         {items.map((s, i) => (
-          <tr key={`${s.sku}-${i}`} className="hover:bg-slate-50">
+          <tr key={`${s.sku}-${i}`} className="hover:bg-panel">
             <td className="px-4 py-3 font-medium">{s.sku}</td>
-            <td className="px-4 py-3 text-slate-600">{s.name || '—'}</td>
-            <td className="px-4 py-3 text-slate-600">{s.warehouse || '—'}</td>
+            <td className="px-4 py-3 text-ink-soft">{s.name || '—'}</td>
+            <td className="px-4 py-3 text-ink-soft">{s.warehouse || '—'}</td>
             <td className="px-4 py-3 text-right font-medium">{s.amount}</td>
           </tr>
         ))}

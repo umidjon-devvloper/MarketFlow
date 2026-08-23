@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Paketlarni o'rnatish
+        run: npm ci
+
+      # Prisma Client bo'lmasa API kompilyatsiya bo'lmaydi
+      - name: Prisma Client generatsiyasi
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      - name: API — TypeScript tekshiruvi
+        run: npm run typecheck --workspace @marketflow/api
+
+      - name: API — testlar
+        run: npm test --workspace @marketflow/api
+
+      - name: Web — TypeScript tekshiruvi
+        run: npx tsc --noEmit --project apps/web/tsconfig.json

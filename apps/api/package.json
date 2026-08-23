@@ -5,13 +5,17 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "prisma generate && tsc",
+    "build": "prisma generate && tsc && npm run copy:assets",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:push": "prisma db push"
+    "prisma:push": "prisma db push",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "copy:assets": "mkdir -p dist/services/export/templates && cp -R src/services/export/templates/. dist/services/export/templates/"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
@@ -20,10 +24,14 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
+    "fflate": "^0.8.3",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^2.2.0",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.0.5",
+    "sharp": "^0.35.3",
     "swagger-ui-express": "^5.0.1",
     "uploadthing": "^7.0.0",
     "xlsx": "^0.18.5",
@@ -37,9 +45,11 @@
     "@types/morgan": "^1.9.9",
     "@types/multer": "^2.0.0",
     "@types/node": "^20.14.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/swagger-ui-express": "^4.1.8",
     "prisma": "^5.20.0",
     "tsx": "^4.16.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.11"
   }
 }

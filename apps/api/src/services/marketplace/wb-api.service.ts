@@ -19,6 +19,8 @@ import { limited, tokenId } from './rate-limit';
 const WB_COMMON = 'https://common-api.wildberries.ru';
 const WB_CONTENT = 'https://content-api.wildberries.ru';
 const WB_STATS = 'https://statistics-api.wildberries.ru';
+const WB_PRICES = 'https://discounts-prices-api.wildberries.ru';
+const WB_MARKETPLACE = 'https://marketplace-api.wildberries.ru';
 
 export class WbApiError extends Error {
   constructor(
@@ -33,7 +35,7 @@ export class WbApiError extends Error {
 // ─── LIMITLAR ────────────────────────────────────────────
 
 /** Endpoint guruhlari — WB limitlari shu darajada hisoblanadi */
-type Bucket = 'ping' | 'cards' | 'orders' | 'sales' | 'stocks';
+type Bucket = 'ping' | 'cards' | 'orders' | 'sales' | 'stocks' | 'prices' | 'fbs';
 
 /** Ikki so'rov orasidagi minimal oraliq (ms) */
 const MIN_GAP_MS: Record<Bucket, number> = {
@@ -42,6 +44,8 @@ const MIN_GAP_MS: Record<Bucket, number> = {
   orders: 61_000, // 1 so'rov/daqiqa
   sales: 61_000, // 1 so'rov/daqiqa
   stocks: 61_000, // 1 so'rov/daqiqa
+  prices: 700, // 100 so'rov/daqiqa
+  fbs: 250, // 300 so'rov/daqiqa
 };
 
 /**
@@ -55,6 +59,8 @@ const BUCKET_SCOPE: Record<Bucket, string> = {
   orders: 'Statistika (Статистика)',
   sales: 'Statistika (Статистика)',
   stocks: 'Statistika (Статистика)',
+  prices: 'Narxlar va chegirmalar (Цены и скидки)',
+  fbs: 'Marketplace (Маркетплейс)',
 };
 
 /** Javobni qancha vaqt keshda saqlash (ms) */
@@ -65,6 +71,9 @@ const CACHE_TTL_MS: Record<Bucket, number> = {
   orders: 10 * 60_000,
   sales: 10 * 60_000,
   stocks: 10 * 60_000,
+  prices: 5 * 60_000,
+  // FBS qoldig'i sotuvchi o'zi boshqaradi — tezroq eskiradi
+  fbs: 2 * 60_000,
 };
 
 /** Bitta token bo'yicha istalgan ikki so'rov orasidagi minimal oraliq — global limiter uchun */
@@ -206,10 +215,80 @@ export function decodeToken(apiKey: string): WbTokenInfo | null {
   }
 }
 
+export interface WbTokenProblem {
+  code: 'not_jwt' | 'expired' | 'sandbox' | 'no_scopes';
+  message: string;
+}
+
+/**
+ * Tokenni WB serveriga bormasdan tekshirish.
+ *
+ * WB tokeni — JWT, ichida hamma narsa yozilgan. Ikkita xato juda ko'p
+ * uchraydi va API javobidan tushunish qiyin:
+ *
+ *   t = true  → "Тестовый контур" katagi belgilangan. Bunday token faqat
+ *               sandbox'da ishlaydi, production endpointlar 403 qaytaradi.
+ *   s = 0     → token yaratishda birorta ham kategoriya belgilanmagan.
+ *               Har qanday so'rov "token scope not allowed" bilan tugaydi.
+ *
+ * Shuning uchun bularni kalit saqlanayotgan paytdayoq ushlaymiz.
+ */
+export function inspectToken(token: string): WbTokenProblem[] {
+  const problems: WbTokenProblem[] = [];
+  const parts = token.trim().split('.');
+
+  if (parts.length !== 3) {
+    return [
+      {
+        code: 'not_jwt',
+        message:
+          "Bu WB tokeniga o'xshamaydi. Seller kabinet → Настройки → Доступ к API dan " +
+          "to'liq tokenni nusxalang (uzun, nuqtalar bilan ajratilgan matn).",
+      },
+    ];
+  }
+
+  let payload: any;
+  try {
+    payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return [{ code: 'not_jwt', message: "Token o'qib bo'lmadi — buzilgan yoki to'liq nusxalanmagan" }];
+  }
+
+  if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()) {
+    problems.push({
+      code: 'expired',
+      message: `Token muddati tugagan (${new Date(payload.exp * 1000).toLocaleDateString('uz-UZ')}). Kabinetda yangisini yarating.`,
+    });
+  }
+
+  if (payload.t === true) {
+    problems.push({
+      code: 'sandbox',
+      message:
+        'Bu — test konturi (sandbox) tokeni. Token yaratishda "Тестовый контур" katagi belgilangan, ' +
+        'shuning uchun haqiqiy WB API uni qabul qilmaydi. O\'sha katakni belgilamasdan yangi token yarating.',
+    });
+  }
+
+  if (payload.s === 0) {
+    problems.push({
+      code: 'no_scopes',
+      message:
+        'Tokenda birorta ham kategoriya belgilanmagan. Yangi token yaratayotganda kamida ' +
+        '"Контент" (kartochkalar uchun) va "Статистика" (buyurtma/qoldiqlar uchun) kataklarini belgilang.',
+    });
+  }
+
+  return problems;
+}
+
 /** Ilova ishlatadigan WB xizmatlari — har biri alohida token kategoriyasini talab qiladi */
 const SERVICES = [
   { key: 'content', label: 'Kontent (Контент)', base: WB_CONTENT, needed: 'Mahsulotlar' },
-  { key: 'statistics', label: 'Statistika (Статистика)', base: WB_STATS, needed: 'Buyurtmalar, sotuvlar, qoldiqlar' },
+  { key: 'statistics', label: 'Statistika (Статистика)', base: WB_STATS, needed: 'Buyurtmalar, sotuvlar, FBW qoldiqlari' },
+  { key: 'prices', label: 'Narxlar va chegirmalar (Цены и скидки)', base: WB_PRICES, needed: 'Mahsulot narxlari' },
+  { key: 'marketplace', label: 'Marketplace (Маркетплейс)', base: WB_MARKETPLACE, needed: 'FBS qoldiqlari (o\'z omboringiz)' },
 ] as const;
 
 export interface WbAccess {
@@ -280,4 +359,239 @@ export function getSales(apiKey: string, dateFrom: string): Promise<any[]> {
 export function getStocks(apiKey: string, dateFrom: string): Promise<any[]> {
   const params = new URLSearchParams({ dateFrom });
   return wbFetch(apiKey, `${WB_STATS}/api/v1/supplier/stocks?${params}`, { bucket: 'stocks' });
+}
+
+/**
+ * GET /api/v2/list/goods/filter — narxlar va chegirmalar.
+ *
+ * Kartochkalar API'si narxni umuman qaytarmaydi — narx alohida xizmatda turadi,
+ * shuning uchun mahsulotlar jadvali uchun buni ham chaqirish kerak.
+ */
+export async function getPrices(
+  apiKey: string,
+  { limit = 1000, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<any[]> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  const data = await wbFetch<any>(apiKey, `${WB_PRICES}/api/v2/list/goods/filter?${params}`, {
+    bucket: 'prices',
+  });
+  return data?.data?.listGoods || [];
+}
+
+/**
+ * GET /api/v3/warehouses — sotuvchining o'z (FBS) omborlari.
+ *
+ * FBS'da ishlaydigan sotuvchida statistics/stocks bo'sh keladi: u yerda faqat
+ * WB omboridagi (FBW) tovarlar bor. Shuning uchun qoldiqni omborlar ro'yxati
+ * orqali alohida so'raymiz.
+ */
+export async function getWarehouses(apiKey: string): Promise<any[]> {
+  const data = await wbFetch<any>(apiKey, `${WB_MARKETPLACE}/api/v3/warehouses`, { bucket: 'fbs' });
+  return Array.isArray(data) ? data : [];
+}
+
+/** POST /api/v3/stocks/{warehouseId} — FBS qoldiqlari (barcode bo'yicha, bir so'rovda 1000 tagacha) */
+export async function getFbsStocks(
+  apiKey: string,
+  warehouseId: number | string,
+  skus: string[],
+): Promise<Array<{ sku: string; amount: number }>> {
+  if (!skus.length) return [];
+  const data = await wbFetch<any>(apiKey, `${WB_MARKETPLACE}/api/v3/stocks/${warehouseId}`, {
+    method: 'POST',
+    body: { skus: skus.slice(0, 1000) },
+    bucket: 'fbs',
+  });
+  return Array.isArray(data?.stocks) ? data.stocks : [];
+}
+
+// ─── PREDMETLAR (kategoriyalar) VA MEDIA ─────────────────
+
+/**
+ * GET /content/v2/object/all — WB "predmetlari" (bizda: kategoriya).
+ *
+ * `subjectID` kartochka yaratishda majburiy. WB'da qidiruv server tomonida
+ * (`name` parametri), shuning uchun butun daraxtni keshlash shart emas —
+ * foydalanuvchi yozgan matnni to'g'ridan-to'g'ri uzatamiz.
+ */
+export async function getSubjects(
+  apiKey: string,
+  { name, limit = 50, offset = 0, locale = 'ru' }: { name?: string; limit?: number; offset?: number; locale?: string } = {},
+): Promise<Array<{ subjectID: number; subjectName: string; parentID?: number; parentName?: string }>> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset), locale });
+  if (name) params.set('name', name);
+  const data = await wbFetch<any>(apiKey, `${WB_CONTENT}/content/v2/object/all?${params}`, {
+    bucket: 'cards',
+  });
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+/**
+ * GET /content/v2/object/charcs/{subjectId} — predmetning xarakteristikalari.
+ *
+ * Xarakteristika ID'lari har predmetda boshqacha — bitta kategoriyada ishlagan
+ * ID ikkinchisida umuman mavjud emas. Shuning uchun ularni qattiq yozib
+ * qo'yish mumkin emas, har safar shu yerdan olinadi.
+ */
+export async function getSubjectCharcs(
+  apiKey: string,
+  subjectId: number | string,
+  locale = 'ru',
+): Promise<any[]> {
+  const data = await wbFetch<any>(
+    apiKey,
+    `${WB_CONTENT}/content/v2/object/charcs/${subjectId}?locale=${locale}`,
+    { bucket: 'cards' },
+  );
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+/**
+ * POST /content/v2/barcodes — WB tomonidan barkod generatsiyasi.
+ *
+ * `sizes[].skus` bo'sh bo'lsa WB kartochkani qabul qilmaydi, sotuvchida esa
+ * ko'pincha barkod bo'lmaydi. Shuning uchun kerak bo'lganda o'zimiz so'raymiz.
+ */
+export async function generateBarcodes(apiKey: string, count = 1): Promise<string[]> {
+  const data = await wbFetch<any>(apiKey, `${WB_CONTENT}/content/v2/barcodes`, {
+    method: 'POST',
+    body: { count },
+    bucket: 'cards',
+  });
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+/**
+ * POST /content/v3/media/save — kartochkaga rasm biriktirish (URL ro'yxati bilan).
+ *
+ * WB'da rasm kartochka bilan bir so'rovda ketmaydi: avval kartochka yaratiladi,
+ * u `nmId` oladi, keyin shu metod chaqiriladi. `data` — rasmlarning to'liq
+ * ochiq URL'lari; WB ularni o'zi yuklab oladi, ya'ni manzil tashqaridan
+ * ochiladigan bo'lishi shart (localhost ishlamaydi).
+ */
+export async function saveMedia(
+  apiKey: string,
+  nmId: number,
+  imageUrls: string[],
+): Promise<unknown> {
+  return wbFetch(apiKey, `${WB_CONTENT}/content/v3/media/save`, {
+    method: 'POST',
+    body: { nmId, data: imageUrls },
+    bucket: 'cards',
+  });
+}
+
+/**
+ * POST /content/v2/cards/error/list — yaratishda xato bergan kartochkalar.
+ *
+ * WB kartochkani asinxron yaratadi: HTTP 200 "qabul qilindi" degani,
+ * "yaratildi" degani emas. Haqiqiy natija shu yerda ko'rinadi.
+ */
+export async function getCardErrors(apiKey: string, locale = 'ru'): Promise<any[]> {
+  const data = await wbFetch<any>(
+    apiKey,
+    `${WB_CONTENT}/content/v2/cards/error/list?locale=${locale}`,
+    { bucket: 'cards' },
+  );
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+/** vendorCode bo'yicha yangi yaratilgan kartochkaning nmID sini topish */
+export async function findCardByVendorCode(
+  apiKey: string,
+  vendorCode: string,
+): Promise<{ nmID?: number; imtID?: number } | null> {
+  const { cards } = await getCards(apiKey, { size: 100 });
+  const hit = cards.find((c: any) => c?.vendorCode === vendorCode);
+  return hit ? { nmID: hit.nmID, imtID: hit.imtID } : null;
+}
+
+/**
+ * POST /content/v2/cards/upload — yangi kartochka yaratish.
+ *
+ * Asinxron: 200 javob "qabul qilindi" degani, "yaratildi" degani emas.
+ * Haqiqiy natija `getCardErrors` va `getCards` orqali bilinadi.
+ * Bir so'rovda 100 tagacha kartochka, har birida 30 tagacha nomenklatura.
+ */
+export function uploadCards(apiKey: string, body: unknown): Promise<any> {
+  return wbFetch(apiKey, `${WB_CONTENT}/content/v2/cards/upload`, {
+    method: 'POST',
+    body,
+    bucket: 'cards',
+  });
+}
+
+// ─── NARX VA QOLDIQ ──────────────────────────────────────
+
+/**
+ * POST /api/v2/upload/task — narx va chegirma.
+ *
+ * DIQQAT: WB nmID (raqamli) bilan ishlaydi, sotuvchi artikuli bilan emas.
+ * nmID ni `findCardByVendorCode` orqali topib olish kerak.
+ * Limit: 6 soniyada 10 so'rov (butun akkaunt bo'yicha).
+ */
+export function updatePrices(
+  apiKey: string,
+  data: Array<{ nmID: number; price: number; discount?: number }>,
+): Promise<any> {
+  return wbFetch(apiKey, `${WB_PRICES}/api/v2/upload/task`, {
+    method: 'POST',
+    body: { data },
+    bucket: 'prices',
+  });
+}
+
+/**
+ * PUT /api/v3/stocks/{warehouseId} — FBS qoldiqlari.
+ *
+ * `sku` bu yerda BARKOD (nmID ham, artikul ham emas) — WB shunday ataydi.
+ * Ombor identifikatori majburiy: qoldiq har bir omborda alohida yuritiladi.
+ */
+export function updateStocks(
+  apiKey: string,
+  warehouseId: number | string,
+  stocks: Array<{ sku: string; amount: number }>,
+): Promise<any> {
+  return wbFetch(apiKey, `${WB_MARKETPLACE}/api/v3/stocks/${warehouseId}`, {
+    method: 'PUT',
+    body: { stocks: stocks.slice(0, 1000) },
+    bucket: 'fbs',
+  });
+}
+
+/**
+ * Artikul → nmID va barkod jadvali.
+ *
+ * Narx nmID bo'yicha, qoldiq esa barkod bo'yicha yangilanadi — ikkalasi ham
+ * bizda yo'q, faqat sotuvchi artikuli bor. Shuning uchun kartochkalar
+ * ro'yxatini bir marta o'qib, moslik jadvalini quramiz.
+ */
+export async function buildVendorCodeIndex(
+  apiKey: string,
+  { maxPages = 10 }: { maxPages?: number } = {},
+): Promise<Map<string, { nmID?: number; barcode?: string }>> {
+  const index = new Map<string, { nmID?: number; barcode?: string }>();
+  let cursor: { updatedAt?: string; nmID?: number } | undefined;
+
+  for (let page = 0; page < maxPages; page++) {
+    const { cards, cursor: next } = await getCards(apiKey, {
+      size: 100,
+      updatedAt: cursor?.updatedAt,
+      nmID: cursor?.nmID,
+    });
+    if (!cards.length) break;
+
+    for (const card of cards) {
+      const vendorCode = card?.vendorCode;
+      if (!vendorCode) continue;
+      // Barkod o'lchamlar ichida yotadi — birinchisini olamiz
+      const barcode = card?.sizes?.find((s: any) => s?.skus?.length)?.skus?.[0];
+      index.set(String(vendorCode), { nmID: card?.nmID, barcode });
+    }
+
+    if (cards.length < 100 || !next?.updatedAt) break;
+    cursor = { updatedAt: next.updatedAt, nmID: next.nmID };
+  }
+
+  return index;
 }

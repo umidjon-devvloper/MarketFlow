@@ -376,3 +376,54 @@ export function getInvoices(
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   return uzumFetch(apiKey, `/v1/invoice?${params}`);
 }
+
+// ─── ARTIKUL → skuId MOSLIGI ─────────────────────────────
+
+/**
+ * Sotuvchi artikuli → Uzum'ning raqamli skuId si.
+ *
+ * Nega kerak: `sendPriceData` va `fbs/sku/stocks` faqat raqamli `skuId`
+ * bilan ishlaydi, bizda esa sotuvchi yozgan artikul bor. Moslikni faqat
+ * do'kon katalogidan olish mumkin.
+ *
+ * Bitta mahsulot ichida bir nechta SKU bo'ladi (rang/o'lcham variantlari),
+ * har birining o'z artikuli va skuId si — shuning uchun hammasi yig'iladi,
+ * birinchisi emas.
+ *
+ * Uzum limitlari qattiq (sahifasiga ~0.6s), shuning uchun sahifalar soni
+ * cheklangan: 10 × 50 = 500 SKU. Undan katta katalogda kerakli tovar
+ * topilmasa, aniq xabar beriladi.
+ */
+export async function buildSkuIndex(
+  apiKey: string,
+  shopId: string,
+  { maxPages = 10, size = 50 }: { maxPages?: number; size?: number } = {},
+): Promise<Map<string, number>> {
+  const index = new Map<string, number>();
+
+  for (let page = 0; page < maxPages; page++) {
+    const raw: any = await getProducts(apiKey, shopId, { page, size });
+    const list: any[] =
+      raw?.productList || raw?.products || raw?.items || raw?.content || raw?.payload || [];
+    if (!Array.isArray(list) || !list.length) break;
+
+    for (const product of list) {
+      const skus: any[] = product?.skuList || product?.skus || product?.productSkus || [];
+      for (const sku of skus) {
+        const id = Number(sku?.skuId ?? sku?.id);
+        if (!Number.isFinite(id)) continue;
+
+        // Artikul turli maydonlarda kelishi mumkin — hammasini kalit qilamiz,
+        // shunda sotuvchi qaysi birini yozgan bo'lsa ham topiladi
+        for (const key of [sku?.sellerItemCode, sku?.skuTitle, sku?.barcode, product?.vendorCode]) {
+          const text = key === undefined || key === null ? '' : String(key).trim();
+          if (text) index.set(text, id);
+        }
+      }
+    }
+
+    if (list.length < size) break;
+  }
+
+  return index;
+}

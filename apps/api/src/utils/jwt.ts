@@ -4,6 +4,12 @@ export interface JwtPayload {
   userId: string;
   email: string;
   role: 'SELLER' | 'ADMIN';
+  /**
+   * Foydalanuvchining token avlodi. "Chiqish" da bazadagi qiymat oshadi va
+   * eski refresh tokenlar yaroqsiz bo'ladi — aks holda o'g'irlangan token
+   * 7 kun davomida ishlayverardi.
+   */
+  tv?: number;
 }
 
 export function signAccessToken(payload: JwtPayload): string {

@@ -6,8 +6,22 @@ import { NextRequest, NextResponse } from 'next/server';
  * UploadThing REST API'sining v6 versiyasini ishlatadi.
  */
 
+/** v7 token base64(JSON) bo'lishi mumkin — v6 API esa sk_live_... kutadi */
+function resolveKey(): string | null {
+  const raw = (process.env.UPLOADTHING_TOKEN || process.env.UPLOADTHING_SECRET || '').trim();
+  if (!raw) return null;
+  if (raw.startsWith('sk_')) return raw;
+  try {
+    const decoded = JSON.parse(Buffer.from(raw, 'base64').toString('utf-8'));
+    if (typeof decoded?.apiKey === 'string' && decoded.apiKey) return decoded.apiKey;
+  } catch {
+    // base64 emas
+  }
+  return raw;
+}
+
 export async function POST(req: NextRequest) {
-  const token = process.env.UPLOADTHING_TOKEN;
+  const token = resolveKey();
   if (!token) {
     return NextResponse.json({ error: 'UPLOADTHING_TOKEN sozlanmagan' }, { status: 500 });
   }

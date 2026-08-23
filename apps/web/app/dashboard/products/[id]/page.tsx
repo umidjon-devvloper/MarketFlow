@@ -14,18 +14,24 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPrice } from '@/lib/utils';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmDialog';
+import { SkeletonPage } from '@/components/Skeleton';
+import { RemoteImage } from '@/components/RemoteImage';
 
 const MARKETPLACE_INFO = {
-  UZUM: { name: 'Uzum', icon: '🛒' },
-  OZON: { name: 'Ozon', icon: '📦' },
-  WB: { name: 'WB', icon: '🛍️' },
-  YANDEX: { name: 'Yandex', icon: '🏪' },
+  UZUM: { name: 'Uzum', logo: '/logos/uzum.jpg' },
+  OZON: { name: 'Ozon', logo: '/logos/ozon.jpg' },
+  WB: { name: 'WB', logo: '/logos/wildberries.jpg' },
+  YANDEX: { name: 'Yandex', logo: '/logos/yandex.jpg' },
 };
 
 export default function ProductDetailPage() {
   const params = useParams();
   const productId = params.id as string;
 
+  const toast = useToast();
+  const confirm = useConfirm();
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [processingImage, setProcessingImage] = useState<string | null>(null);
@@ -49,11 +55,11 @@ export default function ProductDetailPage() {
     setProcessingImage(imageId);
     try {
       await api.post('/ai/remove-background', { imageId });
-      alert('Ishlov berish boshlandi. Bir necha sekund kutib turing...');
+      toast('info', "Ishlov berish boshlandi — bir necha soniyada tayyor bo'ladi");
       // Job status ni polling qilish
       setTimeout(load, 5000);
     } catch (err: any) {
-      alert('Xato: ' + (err.response?.data?.error || err.message));
+      toast('error', err.response?.data?.error || err.message);
     } finally {
       setProcessingImage(null);
     }
@@ -63,33 +69,39 @@ export default function ProductDetailPage() {
     setProcessingImage(imageId);
     try {
       await api.post('/ai/upscale', { imageId, scale: 2 });
-      alert('Upscale boshlandi. Bir necha sekund kutib turing...');
+      toast('info', "Sifatni oshirish boshlandi — bir necha soniyada tayyor bo'ladi");
       setTimeout(load, 5000);
     } catch (err: any) {
-      alert('Xato: ' + (err.response?.data?.error || err.message));
+      toast('error', err.response?.data?.error || err.message);
     } finally {
       setProcessingImage(null);
     }
   }
 
   async function handleDeleteImage(imageId: string) {
-    if (!confirm('Rasmni o\'chirmoqchimisiz?')) return;
+    const ok = await confirm({
+      title: "Rasm o'chirilsinmi?",
+      description: "Moslashtirilgan nusxalari ham yo'qoladi.",
+      confirmLabel: "Ha, o'chirilsin",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/products/${productId}/images/${imageId}`);
       load();
     } catch (err) {
-      alert('O\'chirishda xato');
+      toast('error', "Rasmni o'chirib bo'lmadi");
     }
   }
 
-  if (loading) return <div className="text-slate-500">Yuklanmoqda...</div>;
+  if (loading) return <SkeletonPage label="Mahsulot yuklanmoqda" />;
   if (!product) return <div>Mahsulot topilmadi</div>;
 
   return (
     <div>
       <Link
         href="/dashboard/products"
-        className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-4"
+        className="inline-flex items-center gap-1 text-sm text-ink-soft hover:text-ink mb-4"
       >
         <ArrowLeft className="w-4 h-4" /> Ro'yxatga qaytish
       </Link>
@@ -97,7 +109,7 @@ export default function ProductDetailPage() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold mb-2">{product.title}</h1>
-          <p className="text-slate-600">
+          <p className="text-ink-soft">
             {product.category}
             {product.brand && ` • ${product.brand}`}
           </p>
@@ -114,47 +126,48 @@ export default function ProductDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chap: ma'lumotlar */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white p-6 rounded-xl border">
+          <div className="card p-6">
             <h2 className="font-semibold mb-4">Ma'lumotlar</h2>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-600">Narx</span>
+                <span className="text-ink-soft">Narx</span>
                 <span className="font-medium">
                   {formatPrice(product.basePrice, product.currency)}
                 </span>
               </div>
               <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-600">Zaxira</span>
+                <span className="text-ink-soft">Zaxira</span>
                 <span className="font-medium">{product.stock}</span>
               </div>
               {product.sku && (
                 <div className="flex justify-between border-b pb-2">
-                  <span className="text-slate-600">SKU</span>
+                  <span className="text-ink-soft">SKU</span>
                   <span className="font-medium">{product.sku}</span>
                 </div>
               )}
               <div className="pt-3">
-                <p className="text-slate-600 mb-2">Ta'rif</p>
+                <p className="text-ink-soft mb-2">Ta'rif</p>
                 <p className="whitespace-pre-wrap">{product.description}</p>
               </div>
             </div>
           </div>
 
           {/* Rasmlar */}
-          <div className="bg-white p-6 rounded-xl border">
+          <div className="card p-6">
             <h2 className="font-semibold mb-4">
               Rasmlar ({product.images.length})
             </h2>
             {product.images.length === 0 ? (
-              <p className="text-slate-500 text-sm">Rasm yo'q</p>
+              <p className="text-muted text-sm">Rasm yo'q</p>
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 {product.images.map((img: any) => (
                   <div key={img.id} className="relative group">
-                    <img
+                    <RemoteImage
                       src={img.url}
                       alt=""
-                      className="w-full aspect-square object-cover rounded-lg border"
+                      sizes="(max-width: 768px) 33vw, 200px"
+                      className="w-full aspect-square rounded-lg border"
                     />
                     {img.isPrimary && (
                       <div className="absolute top-1 left-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded flex items-center gap-1">
@@ -179,7 +192,7 @@ export default function ProductDetailPage() {
                       <button
                         onClick={() => handleRemoveBackground(img.id)}
                         disabled={processingImage === img.id}
-                        className="w-full text-xs bg-white text-slate-900 py-1.5 rounded font-medium hover:bg-slate-100 disabled:opacity-50 flex items-center justify-center gap-1"
+                        className="w-full text-xs bg-paper text-ink py-1.5 rounded font-medium hover:bg-panel disabled:opacity-50 flex items-center justify-center gap-1"
                       >
                         {processingImage === img.id ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
@@ -191,7 +204,7 @@ export default function ProductDetailPage() {
                       <button
                         onClick={() => handleUpscale(img.id)}
                         disabled={processingImage === img.id}
-                        className="w-full text-xs bg-white text-slate-900 py-1.5 rounded font-medium hover:bg-slate-100 disabled:opacity-50"
+                        className="w-full text-xs bg-paper text-ink py-1.5 rounded font-medium hover:bg-panel disabled:opacity-50"
                       >
                         HD sifat (2x)
                       </button>
@@ -211,7 +224,7 @@ export default function ProductDetailPage() {
         </div>
 
         {/* O'ng: marketplace ro'yxati */}
-        <div className="bg-white p-6 rounded-xl border">
+        <div className="card p-6">
           <h2 className="font-semibold mb-4">Marketplace kartochkalari</h2>
 
           <div className="space-y-2">
@@ -224,15 +237,21 @@ export default function ProductDetailPage() {
                   className="p-3 border rounded-lg flex items-center justify-between"
                 >
                   <div className="flex items-center gap-2">
-                    <span>{info.icon}</span>
+                    <RemoteImage
+                      src={info.logo}
+                      alt={info.name}
+                      fit="contain"
+                      sizes="16px"
+                      className="w-4 h-4 rounded flex-shrink-0"
+                    />
                     <span className="font-medium text-sm">{info.name}</span>
                   </div>
                   {listing ? (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                    <span className="text-xs bg-green-100 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded">
                       {listing.status}
                     </span>
                   ) : (
-                    <span className="text-xs text-slate-400">Yaratilmagan</span>
+                    <span className="text-xs text-muted">Yaratilmagan</span>
                   )}
                 </div>
               );
@@ -241,7 +260,7 @@ export default function ProductDetailPage() {
 
           <Link
             href={`/dashboard/products/${productId}/listings`}
-            className="mt-4 block text-center bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 text-sm"
+            className="mt-4 block text-center bg-accent text-white py-2 rounded-lg font-medium hover:opacity-90 text-sm"
           >
             Kartochkalarni boshqarish
           </Link>

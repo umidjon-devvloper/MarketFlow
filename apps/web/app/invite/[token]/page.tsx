@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Building2, Loader2, Check, X } from 'lucide-react';
+import { Building2, Loader2, Check, X, Mail, Shield, CalendarClock, UserRound } from 'lucide-react';
 import axios from 'axios';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
+import { useToast } from '@/components/Toast';
+import { AppBackground } from '@/components/AppBackground';
+import { RemoteImage } from '@/components/RemoteImage';
 
 interface InvitationData {
   id: string;
@@ -20,6 +23,7 @@ interface InvitationData {
 export default function InvitePage() {
   const params = useParams();
   const router = useRouter();
+  const toast = useToast();
   const token = params.token as string;
 
   const { isAuthenticated, user } = useAuthStore();
@@ -30,6 +34,7 @@ export default function InvitePage() {
 
   useEffect(() => {
     loadInvitation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   async function loadInvitation() {
@@ -54,8 +59,9 @@ export default function InvitePage() {
     }
 
     if (user?.email.toLowerCase() !== invitation?.email.toLowerCase()) {
-      alert(
-        `Bu taklif ${invitation?.email} uchun. Sizniki: ${user?.email}. Iltimos, kerakli akkaunt bilan kiring.`,
+      toast(
+        'error',
+        `Bu taklif ${invitation?.email} uchun yuborilgan, siz esa ${user?.email} bilan kirgansiz. Kerakli akkaunt bilan qayta kiring.`,
       );
       return;
     }
@@ -63,89 +69,104 @@ export default function InvitePage() {
     setAccepting(true);
     try {
       await api.post(`/invitations/${token}/accept`);
-      alert('✅ Tashkilotga muvaffaqiyatli qo\'shildingiz!');
-      // Login qaytadan qilish kerak - organizations ro'yxatini yangilash uchun
+      toast('success', "Tashkilotga qo'shildingiz");
+      // Tashkilotlar ro'yxati auth store'da keshlangan — to'liq qayta yuklash kerak
       router.push('/dashboard');
-      setTimeout(() => window.location.reload(), 100);
+      setTimeout(() => window.location.reload(), 400);
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Xato');
-    } finally {
+      toast('error', err.response?.data?.error || "Taklifni qabul qilib bo'lmadi");
       setAccepting(false);
     }
   }
 
+  // ── Yuklanmoqda ─────────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
+      <Shell>
+        <div className="card p-8 w-full max-w-md">
+          <div className="w-16 h-16 rounded-full bg-panel mx-auto mb-5 animate-pulse" />
+          <div className="h-5 w-2/3 bg-panel rounded mx-auto mb-2.5 animate-pulse" />
+          <div className="h-4 w-1/3 bg-panel rounded mx-auto mb-7 animate-pulse" />
+          <div className="h-32 bg-panel rounded-[18px] mb-6 animate-pulse" />
+          <div className="h-12 bg-panel rounded-full animate-pulse" />
+        </div>
+      </Shell>
     );
   }
 
+  // ── Xato ────────────────────────────────────────────────
   if (error || !invitation) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white p-8 rounded-xl border text-center">
-          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
-            <X className="w-8 h-8 text-red-600" />
+      <Shell>
+        <div className="card p-8 w-full max-w-md text-center">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+            <X className="w-8 h-8 text-red-600 dark:text-red-400" />
           </div>
           <h1 className="text-xl font-bold mb-2">Taklif topilmadi</h1>
-          <p className="text-slate-600 text-sm mb-6">{error || 'Havola noto\'g\'ri yoki muddati tugagan'}</p>
-          <Link href="/" className="text-blue-600 hover:underline">
+          {/* Server ham "Taklif topilmadi" qaytaradi — sarlavhani takrorlamaymiz,
+              o'rniga foydalanuvchi nima qilishi mumkinligini aytamiz */}
+          <p className="text-ink-soft text-sm mb-6">
+            {error && error !== 'Taklif topilmadi'
+              ? error
+              : "Havola noto'g'ri, muddati tugagan yoki taklif bekor qilingan. Tashkilot egasidan yangi havola so'rang."}
+          </p>
+          <Link href="/" className="btn-ghost btn-sm">
             Bosh sahifaga qaytish
           </Link>
         </div>
-      </div>
+      </Shell>
     );
   }
 
+  const expired = new Date(invitation.expiresAt).getTime() < Date.now();
+
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="max-w-md w-full bg-white p-8 rounded-xl border">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+    <Shell>
+      <div className="card p-8 w-full max-w-md">
+        <div className="text-center mb-7">
+          <div className="w-16 h-16 rounded-full bg-accent-soft flex items-center justify-center mx-auto mb-4 overflow-hidden">
             {invitation.organization.logo ? (
-              <img
+              <RemoteImage
                 src={invitation.organization.logo}
                 alt=""
-                className="w-full h-full rounded-full object-cover"
+                sizes="64px"
+                className="w-full h-full"
               />
             ) : (
-              <Building2 className="w-8 h-8 text-blue-600" />
+              <Building2 className="w-8 h-8 text-accent" />
             )}
           </div>
           <h1 className="text-xl font-bold mb-1">{invitation.organization.name}</h1>
-          <p className="text-slate-600 text-sm">tashkilotiga taklif</p>
+          <p className="text-ink-soft text-sm">tashkilotiga taklif</p>
         </div>
 
-        <div className="bg-slate-50 rounded-lg p-4 mb-6 space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-600">Sizni taklif etgan:</span>
-            <span className="font-medium">{invitation.sender.fullName}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600">Email:</span>
-            <span className="font-medium">{invitation.email}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600">Rol:</span>
-            <span className="font-medium">
-              {invitation.role === 'ADMIN' ? 'Admin' : 'Xodim'}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600">Amal qiladi:</span>
-            <span className="font-medium">
-              {new Date(invitation.expiresAt).toLocaleDateString('uz-UZ')} gacha
-            </span>
-          </div>
-        </div>
+        <dl className="rounded-[18px] border border-line bg-panel p-4 mb-6 space-y-2.5 text-sm">
+          <Row icon={UserRound} label="Sizni taklif etgan" value={invitation.sender.fullName} />
+          <Row icon={Mail} label="Email" value={invitation.email} />
+          <Row
+            icon={Shield}
+            label="Rol"
+            value={invitation.role === 'ADMIN' ? 'Admin' : 'Xodim'}
+          />
+          <Row
+            icon={CalendarClock}
+            label="Amal qiladi"
+            value={`${new Date(invitation.expiresAt).toLocaleDateString('uz-UZ')} gacha`}
+            warn={expired}
+          />
+        </dl>
+
+        {expired && (
+          <p className="text-xs text-amber-700 dark:text-amber-400 mb-4 text-center">
+            Havola muddati tugagan — tashkilot egasidan yangisini so'rang.
+          </p>
+        )}
 
         {isAuthenticated ? (
           <button
             onClick={handleAccept}
-            disabled={accepting}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            disabled={accepting || expired}
+            className="btn-primary w-full disabled:opacity-50"
           >
             {accepting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -155,22 +176,57 @@ export default function InvitePage() {
             Taklifni qabul qilish
           </button>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <Link
               href={`/register?invite=${token}&email=${encodeURIComponent(invitation.email)}`}
-              className="block w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 text-center"
+              className="btn-primary w-full"
             >
-              Ro'yxatdan o'tish (yangi)
+              Ro&apos;yxatdan o&apos;tish (yangi)
             </Link>
-            <Link
-              href={`/login?redirect=/invite/${token}`}
-              className="block w-full border border-slate-300 py-3 rounded-lg font-medium hover:bg-slate-50 text-center"
-            >
+            <Link href={`/login?redirect=/invite/${token}`} className="btn-ghost w-full">
               Kirish (akkauntim bor)
             </Link>
           </div>
         )}
       </div>
+    </Shell>
+  );
+}
+
+/** Taklif sahifasining umumiy karkasi — dashboard bilan bir xil fon */
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4 text-ink">
+      <AppBackground />
+      {children}
+    </div>
+  );
+}
+
+function Row({
+  icon: Icon,
+  label,
+  value,
+  warn,
+}: {
+  icon: typeof Mail;
+  label: string;
+  value: string;
+  warn?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="flex items-center gap-2 text-muted min-w-0">
+        <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+        <span className="truncate">{label}:</span>
+      </dt>
+      <dd
+        className={`font-medium text-right truncate ${
+          warn ? 'text-amber-700 dark:text-amber-400' : ''
+        }`}
+      >
+        {value}
+      </dd>
     </div>
   );
 }

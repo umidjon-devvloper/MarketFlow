@@ -1,82 +1,18 @@
-// Semantic tokens are driven by CSS variables (see src/styles/globals.css :root / .dark)
-const v = (name) => `rgb(var(${name}) / <alpha-value>)`;
+// Ranglar, soyalar, animatsiyalar — packages/shared/tailwind-preset.js da.
+// apps/web ham aynan shu presetni ishlatadi, ya'ni dizayn tizimi bitta joydan boshqariladi.
+import sharedPreset from '../../packages/shared/tailwind-preset.js';
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: 'class',
+  presets: [sharedPreset],
   content: ['./src/**/*.{astro,html,js,jsx,ts,tsx,md,mdx}'],
   theme: {
     extend: {
-      colors: {
-        ink: v('--c-ink'),
-        'ink-soft': v('--c-ink-soft'),
-        muted: v('--c-muted'),
-        line: v('--c-line'),
-        'line-soft': v('--c-line-soft'),
-        paper: v('--c-paper'),
-        canvas: v('--c-canvas'),
-        panel: v('--c-panel'),
-        accent: v('--c-accent'),
-        'accent-2': v('--c-accent-2'),
-        'accent-soft': v('--c-accent-soft'),
-        indigo: '#4f46e5',
-        electric: '#2f6bff',
-        uzum: '#8b5cf6',
-        ozon: '#2f88ff',
-        wb: '#e0189c',
-        yandex: '#f5b301',
-      },
+      // Shriftlarni Base.astro dagi Google Fonts <link> yuklaydi
       fontFamily: {
-        serif: ['var(--font-fraunces)', 'Georgia', 'serif'],
-        sans: ['var(--font-manrope)', 'system-ui', 'sans-serif'],
-        mono: ['var(--font-jbmono)', 'ui-monospace', 'monospace'],
-      },
-      boxShadow: {
-        card: '0 1px 2px rgba(16,18,27,0.04), 0 10px 30px -16px rgba(16,18,27,0.14)',
-        'card-hover': '0 1px 2px rgba(16,18,27,0.05), 0 28px 56px -22px rgba(108,71,255,0.28)',
-        btn: '0 1px 0 rgba(255,255,255,0.22) inset, 0 10px 24px -10px rgba(108,71,255,0.55)',
-        'btn-hover': '0 1px 0 rgba(255,255,255,0.3) inset, 0 16px 34px -10px rgba(108,71,255,0.65)',
-        soft: '0 1px 2px rgba(16,18,27,0.05)',
-        glow: '0 0 0 1px rgba(108,71,255,0.12), 0 20px 60px -24px rgba(108,71,255,0.45)',
-      },
-      backgroundImage: {
-        'grad-brand': 'linear-gradient(135deg, #6c47ff 0%, #4f46e5 50%, #2f6bff 100%)',
-        'grad-soft': 'linear-gradient(135deg, #efeaff 0%, #ffffff 60%)',
-      },
-      animation: {
-        drift1: 'drift1 26s ease-in-out infinite',
-        drift2: 'drift2 30s ease-in-out infinite',
-        scanmove: 'scanmove 1.6s ease-in-out infinite',
-        fadein: 'fadein .5s cubic-bezier(.16,.84,.32,1)',
-        floaty: 'floaty 7s ease-in-out infinite',
-        'floaty-slow': 'floaty 11s ease-in-out infinite',
-        shimmer: 'shimmer 2.4s linear infinite',
-        wobble: 'wobble 12s ease-in-out infinite',
-        'spin-slow': 'spinSlow 22s linear infinite',
-        'gradient-x': 'gradientShift 8s ease infinite',
-        marquee: 'marquee 38s linear infinite',
-        'pulse-ring': 'pulseRing 2.4s ease-out infinite',
-        'fade-down': 'fadeDown .6s cubic-bezier(.16,.84,.32,1) both',
-        'fade-up': 'fadeUp .6s cubic-bezier(.16,.84,.32,1) both',
-      },
-      keyframes: {
-        drift1: { '0%,100%': { transform: 'translate(0,0)' }, '50%': { transform: 'translate(50px,40px)' } },
-        drift2: { '0%,100%': { transform: 'translate(0,0)' }, '50%': { transform: 'translate(-50px,50px)' } },
-        scanmove: { '0%': { top: '0%' }, '50%': { top: '96%' }, '100%': { top: '0%' } },
-        fadein: { from: { opacity: '0', transform: 'translateY(8px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
-        fadeDown: { from: { opacity: '0', transform: 'translateY(-14px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
-        fadeUp: { from: { opacity: '0', transform: 'translateY(14px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
-        floaty: { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-12px)' } },
-        shimmer: { '0%': { backgroundPosition: '-200% 0' }, '100%': { backgroundPosition: '200% 0' } },
-        wobble: { '0%,100%': { transform: 'rotateX(-26deg) rotateY(-42deg)' }, '50%': { transform: 'rotateX(-22deg) rotateY(-50deg)' } },
-        spinSlow: { from: { transform: 'rotate(0deg)' }, to: { transform: 'rotate(360deg)' } },
-        gradientShift: { '0%,100%': { backgroundPosition: '0% 50%' }, '50%': { backgroundPosition: '100% 50%' } },
-        marquee: { from: { transform: 'translateX(0)' }, to: { transform: 'translateX(-50%)' } },
-        pulseRing: {
-          '0%': { boxShadow: '0 0 0 0 rgba(43,201,120,0.5)' },
-          '70%': { boxShadow: '0 0 0 10px rgba(43,201,120,0)' },
-          '100%': { boxShadow: '0 0 0 0 rgba(43,201,120,0)' },
-        },
+        serif: ["var(--font-fraunces, 'Fraunces')", 'Georgia', 'serif'],
+        sans: ["var(--font-manrope, 'Manrope')", 'system-ui', 'sans-serif'],
+        mono: ["var(--font-jbmono, 'JetBrains Mono')", 'ui-monospace', 'monospace'],
       },
     },
   },

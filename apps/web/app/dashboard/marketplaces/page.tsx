@@ -7,6 +7,9 @@ import { CheckCircle2, XCircle, Trash2, Plus, Loader2, ExternalLink } from 'luci
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmDialog';
+import { QueryError } from '@/components/QueryError';
+import { RemoteImage } from '@/components/RemoteImage';
 
 interface Credential {
   id: string;
@@ -30,14 +33,16 @@ interface FieldConfig {
 const MARKETPLACES: Array<{
   id: Credential['marketplace'];
   name: string;
-  icon: string;
+  logo: string;
+  color: string;
   hint: string;
   fields: FieldConfig[];
 }> = [
   {
     id: 'UZUM',
     name: 'Uzum Market',
-    icon: '🛒',
+    logo: '/logos/uzum.jpg',
+    color: '#7000FF',
     hint: "Kalit: business.uzum.uz → Sozlamalar → API kalitlari",
     fields: [
       {
@@ -53,7 +58,8 @@ const MARKETPLACES: Array<{
   {
     id: 'OZON',
     name: 'Ozon',
-    icon: '📦',
+    logo: '/logos/ozon.jpg',
+    color: '#005BFF',
     hint: 'Kalit: seller.ozon.ru → Настройки → API-ключи',
     fields: [
       { key: 'apiKey', label: 'Api-Key', required: true, secret: true },
@@ -69,7 +75,8 @@ const MARKETPLACES: Array<{
   {
     id: 'WB',
     name: 'Wildberries',
-    icon: '🛍️',
+    logo: '/logos/wildberries.jpg',
+    color: '#CB11AB',
     hint: 'Kalit: seller.wildberries.ru → Настройки → Доступ к API',
     fields: [
       {
@@ -84,7 +91,8 @@ const MARKETPLACES: Array<{
   {
     id: 'YANDEX',
     name: 'Yandex Market',
-    icon: '🏪',
+    logo: '/logos/yandex.jpg',
+    color: '#FC3F1D',
     hint: 'Kalit: partner.market.yandex.ru → Настройки → API-ключи',
     fields: [
       { key: 'apiKey', label: 'Api-Key', required: true, secret: true },
@@ -100,12 +108,19 @@ const MARKETPLACES: Array<{
 
 export default function MarketplacesPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const currentOrgId = useAuthStore((s) => s.currentOrgId);
   const [showModal, setShowModal] = useState<Credential['marketplace'] | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
 
-  const { data: credentials = [], isLoading } = useQuery({
+  const {
+    data: credentials = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['marketplaces', currentOrgId],
     queryFn: async () => (await api.get('/marketplaces')).data.items as Credential[],
     enabled: !!currentOrgId,
@@ -114,7 +129,14 @@ export default function MarketplacesPage() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['marketplaces', currentOrgId] });
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`${name} ulanishini o'chirmoqchimisiz?`)) return;
+    const ok = await confirm({
+      title: `${name} ulanishi uzilsinmi?`,
+      description:
+        "Saqlangan API kalit o'chadi va bu marketplace bo'yicha sinxronizatsiya to'xtaydi. Kartochkalaringiz joyida qoladi.",
+      confirmLabel: 'Ha, uzilsin',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/marketplaces/${id}`);
       refresh();
@@ -142,16 +164,19 @@ export default function MarketplacesPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold">Marketplace'lar</h1>
-        <p className="text-slate-600 mt-1">
+        <h1 className="text-[30px] font-bold tracking-tight">Marketplace'lar</h1>
+        <p className="text-muted mt-1">
           Har bir marketplace uchun API kalit yoki hisob ma'lumotlarini kiriting
         </p>
       </div>
 
+      {/* Xato bo'lsa kartalar "ulanmagan" bo'lib ko'rinadi — sababini aytamiz */}
+      {isError && <QueryError error={error} onRetry={() => refetch()} className="mb-4" />}
+
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {MARKETPLACES.map((mp) => (
-            <div key={mp.id} className="bg-white p-6 rounded-xl border animate-pulse h-32" />
+            <div key={mp.id} className="card p-6 animate-pulse h-40" />
           ))}
         </div>
       ) : (
@@ -159,23 +184,28 @@ export default function MarketplacesPage() {
           {MARKETPLACES.map((mp) => {
             const cred = getCred(mp.id);
             return (
-              <div key={mp.id} className="bg-white p-6 rounded-xl border">
+              <div key={mp.id} className="card p-6 hover:-translate-y-0.5 hover:shadow-card-hover">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <span className="text-3xl">{mp.icon}</span>
+                    <span
+                      className="w-12 h-12 rounded-full overflow-hidden border border-line flex-shrink-0 flex items-center justify-center bg-paper"
+                      style={{ boxShadow: `inset 0 0 0 2px ${mp.color}1a` }}
+                    >
+                      <RemoteImage src={mp.logo} alt={mp.name} fit="contain" sizes="48px" className="w-full h-full" />
+                    </span>
                     <div>
                       <h3 className="font-semibold">{mp.name}</h3>
                       {cred?.shopName ? (
-                        <p className="text-sm text-slate-600">{cred.shopName}</p>
+                        <p className="text-sm text-ink-soft">{cred.shopName}</p>
                       ) : (
-                        <p className="text-xs text-slate-400">{mp.hint}</p>
+                        <p className="text-xs text-muted">{mp.hint}</p>
                       )}
                     </div>
                   </div>
                   {cred ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                    <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
                   ) : (
-                    <XCircle className="w-5 h-5 text-slate-300 flex-shrink-0" />
+                    <XCircle className="w-5 h-5 text-muted/50 flex-shrink-0" />
                   )}
                 </div>
 
@@ -183,7 +213,7 @@ export default function MarketplacesPage() {
                   <div className="space-y-2">
                     <Link
                       href={`/dashboard/marketplaces/${cred.id}`}
-                      className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center justify-center gap-2"
+                      className="btn-primary btn-sm w-full"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Ma'lumotlarni ko'rish
@@ -192,20 +222,21 @@ export default function MarketplacesPage() {
                       <button
                         onClick={() => handleTest(cred.id)}
                         disabled={testing === cred.id}
-                        className="flex-1 border border-slate-300 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50 flex items-center justify-center gap-2"
+                        className="btn-ghost btn-sm flex-1 disabled:opacity-50"
                       >
                         {testing === cred.id && <Loader2 className="w-4 h-4 animate-spin" />}
                         Test qilish
                       </button>
                       <button
                         onClick={() => setShowModal(mp.id)}
-                        className="flex-1 border border-slate-300 py-2 rounded-lg text-sm font-medium hover:bg-slate-50"
+                        className="btn-ghost btn-sm flex-1"
                       >
                         Yangilash
                       </button>
                       <button
                         onClick={() => handleDelete(cred.id, mp.name)}
-                        className="p-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
+                        aria-label={`${mp.name} ulanishini uzish`}
+                        className="px-4 border border-red-500/30 text-red-600 rounded-full transition hover:bg-red-500/10"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -214,7 +245,7 @@ export default function MarketplacesPage() {
                 ) : (
                   <button
                     onClick={() => setShowModal(mp.id)}
-                    className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center justify-center gap-2"
+                    className="btn-primary btn-sm w-full"
                   >
                     <Plus className="w-4 h-4" />
                     Ulash
@@ -281,14 +312,16 @@ function CredentialsModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full">
-        <div className="p-6 border-b">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="card max-w-md w-full">
+        <div className="p-6 border-b border-line">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">{mp.icon}</span>
+            <span className="w-11 h-11 rounded-full overflow-hidden border border-line flex-shrink-0 flex items-center justify-center bg-paper">
+              <RemoteImage src={mp.logo} alt={mp.name} fit="contain" sizes="48px" className="w-full h-full" />
+            </span>
             <div>
               <h2 className="text-lg font-semibold">{mp.name} ulash</h2>
-              <p className="text-sm text-slate-600">{mp.hint}</p>
+              <p className="text-sm text-muted">{mp.hint}</p>
             </div>
           </div>
         </div>
@@ -304,13 +337,13 @@ function CredentialsModal({
                 type={field.secret ? 'password' : 'text'}
                 value={form[field.key]}
                 onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
-                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2.5 rounded-[14px] border border-line bg-paper/70 text-sm transition focus:outline-none focus:border-accent/50"
                 placeholder={field.placeholder}
                 required={field.required}
               />
-              {field.hint && <p className="text-xs text-slate-500 mt-1">{field.hint}</p>}
+              {field.hint && <p className="text-xs text-muted mt-1">{field.hint}</p>}
               {field.secret && (
-                <p className="text-xs text-slate-500 mt-1">Shifrlanadi va xavfsiz saqlanadi</p>
+                <p className="text-xs text-muted mt-1">Shifrlanadi va xavfsiz saqlanadi</p>
               )}
             </div>
           ))}
@@ -319,14 +352,14 @@ function CredentialsModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 border border-slate-300 py-2 rounded-lg font-medium hover:bg-slate-50"
+              className="btn-ghost btn-sm flex-1"
             >
               Bekor qilish
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              className="btn-primary btn-sm flex-1 disabled:opacity-50"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               Saqlash

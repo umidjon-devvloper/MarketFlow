@@ -106,3 +106,145 @@ export async function getStocks(
     cursor: data?.cursor || data?.result?.cursor,
   };
 }
+
+// ─── KATEGORIYALAR ───────────────────────────────────────
+
+/**
+ * POST /v1/description-category/tree — kategoriyalar va tovar turlari daraxti.
+ *
+ * Ozon kartochka yaratishda ikkita raqamni talab qiladi:
+ *   description_category_id — oxirgidan oldingi daraja ("Kanselyariya tovarlari")
+ *   type_id                 — barg ("Narx yorlig'i"), u 8229 atributining qiymati
+ *
+ * Ikkalasi ham shu daraxtdan olinadi, boshqa yo'l yo'q.
+ */
+export function getCategoryTree(creds: OzonCreds, language = 'RU'): Promise<any> {
+  return ozonFetch(creds, '/v1/description-category/tree', { language });
+}
+
+/** POST /v1/description-category/attribute — shu kategoriya+tur uchun atributlar ro'yxati */
+export async function getCategoryAttributes(
+  creds: OzonCreds,
+  categoryId: number,
+  typeId: number,
+  language = 'RU',
+): Promise<any[]> {
+  const data = await ozonFetch<any>(creds, '/v1/description-category/attribute', {
+    description_category_id: categoryId,
+    type_id: typeId,
+    language,
+  });
+  return data?.result || [];
+}
+
+/**
+ * POST /v1/description-category/attribute/values — lug'atli atributning qiymatlari.
+ *
+ * Ba'zi atributlar erkin matn emas, ro'yxatdan tanlanadi (rang, material).
+ * Bunday atributda `dictionary_id > 0` bo'ladi va qiymat `dictionary_value_id`
+ * sifatida yuboriladi — matn yuborilsa Ozon rad etadi.
+ */
+export async function getAttributeValues(
+  creds: OzonCreds,
+  categoryId: number,
+  typeId: number,
+  attributeId: number,
+  { limit = 100, lastValueId = 0 }: { limit?: number; lastValueId?: number } = {},
+): Promise<any[]> {
+  const data = await ozonFetch<any>(creds, '/v1/description-category/attribute/values', {
+    description_category_id: categoryId,
+    type_id: typeId,
+    attribute_id: attributeId,
+    limit,
+    last_value_id: lastValueId,
+    language: 'RU',
+  });
+  return data?.result || [];
+}
+
+/** POST /v1/product/import/info — import vazifasining natijasi (xatolar shu yerda) */
+export function getImportInfo(creds: OzonCreds, taskId: string | number): Promise<any> {
+  return ozonFetch(creds, '/v1/product/import/info', { task_id: Number(taskId) });
+}
+
+/** POST /v3/product/import — kartochka yaratish/yangilash (asinxron, task_id qaytadi) */
+export function importProducts(creds: OzonCreds, body: unknown): Promise<any> {
+  return ozonFetch(creds, '/v3/product/import', body);
+}
+
+// ─── NARX VA QOLDIQ ──────────────────────────────────────
+
+/**
+ * POST /v1/product/import/prices — narxlarni yangilash.
+ * `offer_id` — sotuvchi artikuli, ya'ni bizdagi Product.sku.
+ */
+export function updatePrices(
+  creds: OzonCreds,
+  prices: Array<{ offer_id: string; price: string; old_price?: string }>,
+): Promise<any> {
+  return ozonFetch(creds, '/v1/product/import/prices', {
+    prices: prices.map((p) => ({
+      offer_id: p.offer_id,
+      price: p.price,
+      // Ozon "0" ni "chegirmagacha narx yo'q" deb tushunadi
+      old_price: p.old_price ?? '0',
+      auto_action_enabled: 'UNKNOWN',
+    })),
+  });
+}
+
+/** POST /v1/product/import/stocks — qoldiqlarni yangilash (bir so'rovda 100 tagacha) */
+export function updateStocks(
+  creds: OzonCreds,
+  stocks: Array<{ offer_id: string; stock: number }>,
+): Promise<any> {
+  return ozonFetch(creds, '/v1/product/import/stocks', { stocks });
+}
+
+// ─── BUYURTMA AMALLARI (FBS) ─────────────────────────────
+
+/**
+ * POST /v1/cancel-reason/list-by-posting — shu jo'natma uchun bekor qilish sabablari.
+ *
+ * Ozon `cancel_reason_id` ni raqamda talab qiladi va ro'yxat jo'natmaga qarab
+ * farq qiladi (bekor qilish yig'ishdan oldinmi yoki keyinmi). Shuning uchun
+ * sabablarni qattiq yozib qo'yib bo'lmaydi — har safar so'raladi.
+ */
+export async function getCancelReasons(
+  creds: OzonCreds,
+  postingNumber: string,
+): Promise<Array<{ id: number; title: string; typeId?: string }>> {
+  const data = await ozonFetch<any>(creds, '/v1/cancel-reason/list-by-posting', {
+    related_posting_numbers: [postingNumber],
+  });
+
+  const first = (data?.result || data?.reasons || [])[0];
+  const list: any[] = first?.reasons || data?.result || [];
+
+  return list
+    .map((r: any) => ({
+      id: Number(r?.id ?? r?.cancel_reason_id),
+      title: String(r?.title ?? r?.cancel_reason ?? '').trim(),
+      typeId: r?.type_id ?? r?.cancellation_type,
+    }))
+    .filter((r) => Number.isFinite(r.id) && r.title);
+}
+
+/**
+ * POST /v2/posting/fbs/cancel — jo'natmani bekor qilish.
+ *
+ * `posting_number` va `cancel_reason_id` ikkalasi ham majburiy.
+ * Ba'zi sabablar uchun Ozon izoh (`cancel_reason_message`) ham talab qiladi.
+ */
+export function cancelPosting(
+  creds: OzonCreds,
+  postingNumber: string,
+  cancelReasonId: number,
+  message?: string,
+): Promise<any> {
+  return ozonFetch(creds, '/v2/posting/fbs/cancel', {
+    posting_number: postingNumber,
+    cancel_reason_id: cancelReasonId,
+    cancel_reason_message: message || '',
+  });
+}

@@ -30,15 +30,17 @@ export function useToast() {
 }
 
 const ICONS = {
-  success: <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />,
-  error: <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />,
-  info: <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />,
+  success: <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />,
+  error: <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />,
+  info: <Info className="w-5 h-5 text-accent flex-shrink-0" />,
 };
 
+// Shaffof ranglar ataylab: qattiq `border-emerald-500/30` qorong'i rejimda
+// oqarib, kartaning chegarasi yo'qoladi
 const BORDERS = {
-  success: 'border-green-200',
-  error: 'border-red-200',
-  info: 'border-blue-200',
+  success: 'border-emerald-500/30',
+  error: 'border-red-500/30',
+  info: 'border-accent/30',
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -61,17 +63,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto bg-white border ${BORDERS[t.type]} rounded-lg shadow-lg p-3 flex items-start gap-2 animate-in`}
+            className={`pointer-events-auto card border ${BORDERS[t.type]} p-3.5 flex items-start gap-2.5 animate-fade-up`}
           >
             {ICONS[t.type]}
             <p className="text-sm flex-1 break-words">{t.message}</p>
             <button
               onClick={() => dismiss(t.id)}
-              className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+              aria-label="Xabarni yopish"
+              className="text-muted hover:text-ink transition flex-shrink-0"
             >
               <X className="w-4 h-4" />
             </button>

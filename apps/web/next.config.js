@@ -7,16 +7,36 @@ process.env.NEXT_IGNORE_INCORRECT_LOCKFILE = '1';
 // Bu yerda web = "host" zona: dashboard/auth/api o'zi xizmat qiladi,
 // marketing yo'llarini esa landing zonasiga proxy qiladi (Multi-Zones).
 // Lokal: landing 3001-portda. Vercel'da keyinchalik @vercel/microfrontends bilan almashtiriladi.
-const LANDING_URL = process.env.LANDING_URL || 'https://market-flow-landing.vercel.app';
+const LANDING_URL = process.env.LANDING_URL || 'http://localhost:3001';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   eslint: { ignoreDuringBuilds: true },
+  // Rasm optimizatsiyasi faqat shu hostlar uchun ishlaydi. Ro'yxatda yo'q host
+  // 400 qaytaradi — shuning uchun RemoteImage komponenti xatoni ushlab, oddiy
+  // <img> ga tushadi. Ya'ni ro'yxat to'liq bo'lmasa rasm sinmaydi, faqat
+  // optimallashtirilmaydi.
   images: {
     remotePatterns: [
+      // O'z xostingimiz
       { protocol: 'https', hostname: 'utfs.io' },
       { protocol: 'https', hostname: '*.ufs.sh' },
+      // UPLOADTHING_TOKEN bo'lmaganda rasmlar API'ning /uploads/ papkasidan keladi
+      { protocol: 'http', hostname: 'localhost' },
+      { protocol: 'http', hostname: '127.0.0.1' },
+      ...(process.env.NEXT_PUBLIC_IMAGE_HOST
+        ? [{ protocol: 'https', hostname: process.env.NEXT_PUBLIC_IMAGE_HOST }]
+        : []),
+      // Marketplace CDN'lari — sinxronizatsiyada kelgan kartochka rasmlari
+      { protocol: 'https', hostname: '*.wbbasket.ru' },
+      { protocol: 'https', hostname: '*.wb.ru' },
+      { protocol: 'https', hostname: '*.ozone.ru' },
+      { protocol: 'https', hostname: '*.ozstatic.by' },
+      { protocol: 'https', hostname: 'avatars.mds.yandex.net' },
+      { protocol: 'https', hostname: '*.uzum.uz' },
+      // Namuna ma'lumotdagi rasmlar
+      { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
   },
   async rewrites() {

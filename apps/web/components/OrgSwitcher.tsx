@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, Building2, Plus, Check, Crown, Shield, User } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
+import { RemoteImage } from '@/components/RemoteImage';
 
 const ROLE_ICONS = {
   OWNER: <Crown className="w-3 h-3" />,
@@ -51,58 +52,58 @@ export function OrgSwitcher() {
     <div ref={dropdownRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-slate-50 text-left"
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-line bg-paper hover:bg-panel transition text-left"
       >
-        <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 bg-accent-soft rounded-lg flex items-center justify-center flex-shrink-0">
           {current.logo ? (
-            <img src={current.logo} alt="" className="w-full h-full rounded object-cover" />
+            <RemoteImage src={current.logo} alt="" sizes="32px" className="w-full h-full rounded" />
           ) : (
-            <Building2 className="w-4 h-4 text-blue-600" />
+            <Building2 className="w-4 h-4 text-accent" />
           )}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{current.name}</p>
-          <div className="flex items-center gap-1 text-xs text-slate-500">
+          <div className="flex items-center gap-1 text-[11px] text-muted">
             {ROLE_ICONS[current.role]}
             <span>{ROLE_LABELS[current.role]}</span>
           </div>
         </div>
-        <ChevronDown className={`w-4 h-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-muted transition ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute top-full mt-1 left-0 right-0 bg-white border rounded-lg shadow-lg py-1 z-50 max-h-80 overflow-auto">
+        <div className="absolute top-full mt-1.5 left-0 right-0 bg-paper border border-line rounded-xl shadow-card py-1.5 z-50 max-h-80 overflow-auto">
           {organizations.map((org) => (
             <button
               key={org.id}
               onClick={() => handleSwitch(org.id)}
-              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-left"
+              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-panel transition text-left"
             >
-              <div className="w-6 h-6 bg-slate-100 rounded flex items-center justify-center flex-shrink-0">
+              <div className="w-6 h-6 bg-panel rounded-md flex items-center justify-center flex-shrink-0">
                 {org.logo ? (
-                  <img src={org.logo} alt="" className="w-full h-full rounded object-cover" />
+                  <RemoteImage src={org.logo} alt="" sizes="24px" className="w-full h-full rounded" />
                 ) : (
-                  <Building2 className="w-3 h-3 text-slate-600" />
+                  <Building2 className="w-3 h-3 text-ink-soft" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm truncate">{org.name}</p>
-                <div className="flex items-center gap-1 text-xs text-slate-500">
+                <div className="flex items-center gap-1 text-[11px] text-muted">
                   {ROLE_ICONS[org.role]}
                   <span>{ROLE_LABELS[org.role]}</span>
                 </div>
               </div>
-              {org.id === currentOrgId && <Check className="w-4 h-4 text-blue-600" />}
+              {org.id === currentOrgId && <Check className="w-4 h-4 text-accent" />}
             </button>
           ))}
 
-          <div className="border-t mt-1 pt-1">
+          <div className="border-t border-line mt-1 pt-1">
             <button
               onClick={() => {
                 setOpen(false);
                 router.push('/dashboard/organizations/new');
               }}
-              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-blue-600 text-sm"
+              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-panel transition text-accent text-sm"
             >
               <Plus className="w-4 h-4" />
               Yangi tashkilot yaratish

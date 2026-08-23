@@ -1,37 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import {
-  Package,
-  LayoutDashboard,
-  BarChart3,
-  Settings,
-  LogOut,
-  Store,
-  Users,
-} from 'lucide-react';
+import { Search, Bell, Menu } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
-import { OrgSwitcher } from '@/components/OrgSwitcher';
-import { cn } from '@/lib/utils';
-
-const menu = [
-  { href: '/dashboard', label: 'Bosh sahifa', icon: LayoutDashboard },
-  { href: '/dashboard/products', label: 'Mahsulotlar', icon: Package },
-  { href: '/dashboard/marketplaces', label: 'Marketplace\'lar', icon: Store },
-  { href: '/dashboard/analytics', label: 'Analitika', icon: BarChart3 },
-  { href: '/dashboard/team', label: 'Jamoa', icon: Users },
-  { href: '/dashboard/settings', label: 'Sozlamalar', icon: Settings },
-];
+import { Sidebar } from '@/components/Sidebar';
+import { AppBackground } from '@/components/AppBackground';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { Avatar } from '@/components/RemoteImage';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
-  const { user, isAuthenticated, organizations, logout } = useAuthStore();
+  const { user, isAuthenticated, organizations } = useAuthStore();
   // Zustand persist localStorage'dan keyin yuklanadi — server render bilan
   // mos kelishi uchun birinchi renderda hech narsa ko'rsatmaymiz.
   const [hydrated, setHydrated] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setHydrated(true);
@@ -46,67 +32,78 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [hydrated, isAuthenticated, organizations, router]);
 
+  // ⌘K / Ctrl+K — qidiruvga fokus
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   if (!hydrated || !isAuthenticated) return null;
 
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
-  };
-
   return (
-    <div className="min-h-screen flex bg-slate-50">
-      <aside className="w-64 bg-white border-r flex flex-col">
-        <div className="p-4 border-b">
-          <Link href="/dashboard" className="text-xl font-bold block mb-3">
-            Market<span className="text-blue-600">Flow</span>
-          </Link>
-          <OrgSwitcher />
-        </div>
+    <div className="min-h-screen flex text-ink">
+      <AppBackground />
+      <Sidebar mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
 
-        <nav className="flex-1 p-4 space-y-1">
-          {menu.map((item) => {
-            const Icon = item.icon;
-            // '/dashboard' faqat aniq moslikda faol — aks holda hamma sahifada yonib turadi
-            const isActive =
-              item.href === '/dashboard'
-                ? pathname === '/dashboard'
-                : pathname === item.href || pathname.startsWith(item.href + '/');
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition',
-                  isActive
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-slate-700 hover:bg-slate-100',
-                )}
-              >
-                <Icon className="w-4 h-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="p-4 border-t">
-          <div className="text-sm mb-3">
-            <p className="font-medium">{user?.fullName}</p>
-            <p className="text-slate-500 text-xs truncate">{user?.email}</p>
-          </div>
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header className="sticky top-0 z-30 h-[72px] flex-shrink-0 border-b border-line bg-paper/70 backdrop-blur-xl flex items-center gap-3 px-4 sm:px-6">
           <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50"
+            onClick={() => setMobileOpen(true)}
+            className="lg:hidden w-10 h-10 rounded-full border border-line bg-paper flex items-center justify-center text-ink-soft transition hover:border-accent/40 hover:text-accent"
+            aria-label="Menyu"
           >
-            <LogOut className="w-4 h-4" />
-            Chiqish
+            <Menu className="w-[18px] h-[18px]" />
           </button>
-        </div>
-      </aside>
 
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto p-8">{children}</div>
-      </main>
+          <div className="relative flex-1 max-w-lg">
+            <Search className="w-[18px] h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Qidirish..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const value = (e.target as HTMLInputElement).value.trim();
+                  if (value) router.push(`/dashboard/products?q=${encodeURIComponent(value)}`);
+                }
+                if (e.key === 'Escape') (e.target as HTMLInputElement).blur();
+              }}
+              className="w-full h-11 pl-11 pr-16 rounded-full border border-line bg-paper/70 backdrop-blur text-sm placeholder:text-muted focus:outline-none focus:border-accent/50 transition"
+            />
+            <kbd className="hidden sm:block absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted border border-line rounded px-1.5 py-0.5 bg-paper">
+              ⌘ K
+            </kbd>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2.5">
+            <ThemeToggle />
+
+            <Link
+              href="/dashboard/team"
+              className="relative w-10 h-10 rounded-full border border-line bg-paper text-ink-soft flex items-center justify-center transition hover:text-accent hover:border-accent/40 hover:-translate-y-0.5"
+              aria-label="Bildirishnomalar"
+            >
+              <Bell className="w-[18px] h-[18px]" />
+            </Link>
+
+            <Avatar
+              src={user?.avatar}
+              name={user?.fullName}
+              className="w-10 h-10 rounded-full bg-grad-brand text-white text-xs font-bold flex-shrink-0"
+            />
+          </div>
+        </header>
+
+        <main className="flex-1">
+          <div className="max-w-[1180px] mx-auto px-4 sm:px-6 py-7">{children}</div>
+        </main>
+      </div>
     </div>
   );
 }

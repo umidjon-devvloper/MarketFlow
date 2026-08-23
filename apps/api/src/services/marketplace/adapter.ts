@@ -702,8 +702,104 @@ const ozonAdapter: MarketplaceAdapter = {
 
 // ─── WILDBERRIES ─────────────────────────────────────────
 
+/** WB statistikasi qoldiqni shu sanadan boshlab beradi — hammasini olish uchun eski sana */
+const WB_STOCKS_FROM = '2019-06-20';
+
+/** WB qoldiq qatorlari (FBW + FBS) — barcha kalitlar bo'yicha yig'ilgan jadval */
+interface WbStockIndex {
+  /** nmID / barcode / vendorCode → umumiy qoldiq */
+  byKey: Map<string, number>;
+  /** Qoldiq umuman o'qildimi (yo'q bo'lsa — 0 emas, "noma'lum") */
+  loaded: boolean;
+}
+
+/**
+ * WB qoldiqlarini yig'ish.
+ *
+ * WB'da qoldiq ikki joyda yotadi va ular bir-birini almashtirmaydi:
+ *   FBW — tovar WB omborida  → statistics /supplier/stocks
+ *   FBS — tovar sotuvchida    → marketplace /api/v3/stocks/{warehouseId}
+ * Faqat birinchisini so'rash ko'p sotuvchida bo'sh natija beradi, shuning uchun ikkalasi ham.
+ *
+ * Ikkalasi ham "yumshoq" — biri ishlamasa (token'da ruxsat yo'q, limitga tushdik)
+ * ikkinchisi baribir ko'rsatiladi.
+ */
+async function wbStockIndex(apiKey: string, barcodes: string[]): Promise<WbStockIndex> {
+  const byKey = new Map<string, number>();
+  let loaded = false;
+  const add = (key: string | undefined, amount: number) => {
+    if (!key) return;
+    byKey.set(key, (byKey.get(key) ?? 0) + amount);
+  };
+
+  // FBW — WB omborlari
+  try {
+    const raw = await wb.getStocks(apiKey, WB_STOCKS_FROM);
+    const rows = Array.isArray(raw) ? raw : firstArray(raw, ['stocks']);
+    for (const row of rows) {
+      const amount = pickNumber(row, ['quantity', 'quantityFull']) ?? 0;
+      // Bir tovar bir necha omborda yotishi mumkin — qatorlar qo'shiladi
+      add(pickString(row, ['nmId']), amount);
+      add(pickString(row, ['nmID']), amount);
+      add(pickString(row, ['barcode']), amount);
+      add(pickString(row, ['supplierArticle']), amount);
+    }
+    loaded = true;
+  } catch {
+    // statistics ruxsati yo'q yoki limit — FBS'ni baribir sinaymiz
+  }
+
+  // FBS — sotuvchining o'z omborlari
+  if (barcodes.length) {
+    try {
+      const warehouses = await wb.getWarehouses(apiKey);
+      for (const w of warehouses) {
+        const id = w?.id ?? w?.officeId;
+        if (id === undefined || id === null) continue;
+        const rows = await wb.getFbsStocks(apiKey, id, barcodes);
+        for (const row of rows) {
+          const amount = Number(row?.amount) || 0;
+          if (row?.sku) add(String(row.sku), amount);
+        }
+        loaded = true;
+      }
+    } catch {
+      // marketplace ruxsati yo'q — FBW natijasi bilan cheklanamiz
+    }
+  }
+
+  return { byKey, loaded };
+}
+
+/** WB narxlari — nmID bo'yicha (chegirmadan keyingi, ya'ni xaridor ko'radigan narx) */
+async function wbPriceMap(apiKey: string): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const goods = await wb.getPrices(apiKey, { limit: 1000 });
+    for (const g of goods) {
+      const nm = pickString(g, ['nmID', 'nmId']);
+      if (!nm) continue;
+      const sizes = Array.isArray(g?.sizes) ? g.sizes : [];
+      const price =
+        pickNumber(sizes[0], ['discountedPrice', 'price']) ??
+        pickNumber(g, ['discountedPrice', 'price']);
+      if (price !== undefined) map.set(nm, price);
+    }
+  } catch {
+    // narxlar ruxsati yo'q — jadvalda narx ustuni bo'sh qoladi
+  }
+  return map;
+}
+
 const wbAdapter: MarketplaceAdapter = {
   async test(creds) {
+    // Avval tokenning o'zini tekshiramiz — sandbox tokeni va bo'sh ruxsatlar
+    // WB serveriga bormasdan aniqlanadi, xato ham tushunarli chiqadi
+    const problems = wb.inspectToken(creds.apiKey);
+    if (problems.length) {
+      return { success: false, message: problems.map((p) => p.message).join(' ') };
+    }
+
     const info = wb.decodeToken(creds.apiKey);
     if (info?.isExpired) {
       return {
@@ -749,18 +845,47 @@ const wbAdapter: MarketplaceAdapter = {
       nmID = res.cursor?.nmID;
       if (!cards.length) break;
     }
+    // Kartochka API'si na narxni, na qoldiqni qaytaradi — ikkalasi alohida xizmatlarda
+    const base = cards.map((c: any) => {
+      const photos = Array.isArray(c?.photos) ? c.photos : [];
+      const cardSizes = Array.isArray(c?.sizes) ? c.sizes : [];
+      const skus = cardSizes.flatMap((s: any) => (Array.isArray(s?.skus) ? s.skus : []));
+      return {
+        id: pickString(c, ['nmID', 'nmId', 'imtID']) || '',
+        name: pickString(c, ['title', 'subjectName', 'vendorCode']) || 'Nomsiz',
+        sku: pickString(c, ['vendorCode']),
+        // FBS qoldig'i aynan barcode (WB tilida "sku") bo'yicha so'raladi
+        barcodes: skus.map((b: any) => String(b)).filter(Boolean) as string[],
+        image: photos[0]?.c246x328 || photos[0]?.big || undefined,
+      };
+    });
+
+    const allBarcodes = [...new Set(base.flatMap((b) => b.barcodes))];
+    const [prices, stocks] = await Promise.all([
+      wbPriceMap(creds.apiKey),
+      wbStockIndex(creds.apiKey, allBarcodes),
+    ]);
+
     return {
-      items: cards.map((c: any) => {
-        const photos = Array.isArray(c?.photos) ? c.photos : [];
-        const sizes = Array.isArray(c?.sizes) ? c.sizes : [];
-        const skus = sizes.flatMap((s: any) => (Array.isArray(s?.skus) ? s.skus : []));
+      items: base.map((b) => {
+        const stock = b.barcodes.reduce<number | undefined>((sum, code) => {
+          const value = stocks.byKey.get(code);
+          return value === undefined ? sum : (sum ?? 0) + value;
+        }, undefined);
+        const resolved =
+          stock ?? stocks.byKey.get(b.id) ?? (b.sku ? stocks.byKey.get(b.sku) : undefined);
+
         return {
-          id: pickString(c, ['nmID', 'nmId', 'imtID']) || '',
-          name: pickString(c, ['title', 'subjectName', 'vendorCode']) || 'Nomsiz',
-          sku: pickString(c, ['vendorCode']),
-          barcode: skus[0] ? String(skus[0]) : undefined,
-          image: photos[0]?.c246x328 || photos[0]?.big || undefined,
-          status: pickString(c, ['status']),
+          id: b.id,
+          name: b.name,
+          sku: b.sku,
+          barcode: b.barcodes[0],
+          image: b.image,
+          price: prices.get(b.id),
+          // Qoldiq o'qilgan bo'lsa — topilmagani rostdan ham 0 ta demak
+          stock: resolved ?? (stocks.loaded ? 0 : undefined),
+          // Qoldiq o'qilmagan bo'lsa holatni taxmin qilmaymiz — bo'sh qoldiramiz
+          status: stocks.loaded ? ((resolved ?? 0) > 0 ? 'Sotuvda' : 'Qoldiq yo\'q') : undefined,
         };
       }),
       total,
@@ -795,16 +920,65 @@ const wbAdapter: MarketplaceAdapter = {
   },
 
   async getStocks(creds, { page, size }) {
-    const all = await wb.getStocks(creds.apiKey, '2020-01-01');
-    const list = Array.isArray(all) ? all : firstArray(all, ['stocks']);
+    // FBW — WB omborlaridagi qoldiq
+    let rows: any[] = [];
+    let fbwError: unknown;
+    try {
+      const all = await wb.getStocks(creds.apiKey, WB_STOCKS_FROM);
+      rows = Array.isArray(all) ? all : firstArray(all, ['stocks']);
+    } catch (err) {
+      // Statistika ruxsati yo'q bo'lsa ham FBS qoldig'ini ko'rsatishga harakat qilamiz
+      if ((err as any)?.status === 429) throw err;
+      fbwError = err;
+    }
+
+    const items: NormalizedStock[] = rows.map((s: any) => ({
+      sku: pickString(s, ['supplierArticle', 'barcode', 'nmId']) || '',
+      name: pickString(s, ['subject', 'category', 'brand']),
+      amount: pickNumber(s, ['quantity', 'quantityFull']) ?? 0,
+      warehouse: pickString(s, ['warehouseName']) || 'WB ombori (FBW)',
+    }));
+
+    // FBS — sotuvchining o'z omborlari. Barcode'larni kartochkalardan olamiz,
+    // chunki /api/v3/stocks faqat aniq ro'yxat bo'yicha javob beradi.
+    let fbsOk = false;
+    try {
+      const { cards } = await wb.getCards(creds.apiKey, { size: 100 });
+      const byBarcode = new Map<string, any>();
+      for (const c of cards) {
+        for (const sz of Array.isArray(c?.sizes) ? c.sizes : []) {
+          for (const code of Array.isArray(sz?.skus) ? sz.skus : []) {
+            byBarcode.set(String(code), c);
+          }
+        }
+      }
+      const barcodes = [...byBarcode.keys()];
+      if (barcodes.length) {
+        for (const w of await wb.getWarehouses(creds.apiKey)) {
+          const id = w?.id ?? w?.officeId;
+          if (id === undefined || id === null) continue;
+          for (const row of await wb.getFbsStocks(creds.apiKey, id, barcodes)) {
+            const card = byBarcode.get(String(row?.sku));
+            items.push({
+              sku: pickString(card, ['vendorCode']) || String(row?.sku ?? ''),
+              name: pickString(card, ['title', 'subjectName']),
+              amount: Number(row?.amount) || 0,
+              warehouse: pickString(w, ['name']) || 'O\'z omborim (FBS)',
+            });
+          }
+        }
+      }
+      fbsOk = true;
+    } catch {
+      // Marketplace ruxsati yo'q — faqat FBW ko'rinadi
+    }
+
+    // Ikkala manba ham ochilmadi — bo'sh jadval o'rniga asl sababni ko'rsatamiz
+    if (fbwError && !fbsOk) throw fbwError;
+
     return {
-      items: list.slice(page * size, page * size + size).map((s: any) => ({
-        sku: pickString(s, ['supplierArticle', 'barcode', 'nmId']) || '',
-        name: pickString(s, ['subject', 'category', 'brand']),
-        amount: pickNumber(s, ['quantity', 'quantityFull']) ?? 0,
-        warehouse: pickString(s, ['warehouseName']),
-      })),
-      total: list.length,
+      items: items.slice(page * size, page * size + size),
+      total: items.length,
     };
   },
 

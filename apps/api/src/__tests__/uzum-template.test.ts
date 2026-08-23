@@ -1,0 +1,147 @@
+import { describe, expect, it } from 'vitest';
+import * as XLSX from 'xlsx';
+import { unzipSync } from 'fflate';
+import {
+  fillUzumTemplate,
+  toUzumRow,
+  uzumMaxRows,
+  UZUM_TEMPLATE_COLUMNS,
+} from '../services/export/uzum-template.service';
+
+/** Yaratilgan fayldan Лист1 ni o'qish */
+function readSheet(buffer: Buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  return XLSX.utils.sheet_to_json<string[]>(wb.Sheets['Лист1'], {
+    header: 1,
+    blankrows: true,
+    defval: '',
+  });
+}
+
+const cell = (rows: string[][], col: string, rowNum: number) =>
+  rows[rowNum - 1]?.[XLSX.utils.decode_col(col)] ?? '';
+
+const baseValues = {
+  title: 'Кепка',
+  titleUz: 'Kepka',
+  sku: 'K-1',
+  brand: 'No name',
+  country: 'Узбекистан',
+  description: 'Ручная работа',
+  mxik: '6505003000000000',
+  price: 89000,
+  weight: 120,
+  packHeight: 100,
+  packWidth: 200,
+  packLength: 250,
+};
+
+describe('Uzum shabloni', () => {
+  it('ustun tartibi Uzum shablonidagidek — A dan AD gacha', () => {
+    const cols = UZUM_TEMPLATE_COLUMNS.map((c) => c.col);
+    expect(cols[0]).toBe('A');
+    expect(cols[cols.length - 1]).toBe('AD');
+    expect(new Set(cols).size).toBe(cols.length);
+  });
+
+  it("ma'lumot 4-qatordan boshlanadi, shapka tegilmaydi", () => {
+    const { buffer } = fillUzumTemplate([toUzumRow(baseValues, ['https://a.jpg'])]);
+    const rows = readSheet(buffer);
+
+    // 2-qator — shablonning asl ustun nomlari
+    expect(cell(rows, 'A', 2)).toContain('Название товара RU');
+    expect(cell(rows, 'V', 2)).toContain('ИКПУ');
+    // 4-qator — bizning ma'lumot
+    expect(cell(rows, 'A', 4)).toBe('Кепка');
+    expect(cell(rows, 'B', 4)).toBe('K-1');
+  });
+
+  it('E va F ustunlariga yozmaydi — ularni makros to\'ldiradi', () => {
+    const { buffer } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, category: 'Kiyim' }, ['https://a.jpg']),
+    ]);
+    const rows = readSheet(buffer);
+    expect(cell(rows, 'E', 4)).toBe('');
+    expect(cell(rows, 'F', 4)).toBe('');
+  });
+
+  it('makros, validatsiya va boshqa varaqlar saqlanadi', () => {
+    const { buffer } = fillUzumTemplate([toUzumRow(baseValues, ['https://a.jpg'])]);
+    const zip = unzipSync(new Uint8Array(buffer));
+
+    expect(zip['xl/vbaProject.bin']).toBeDefined();
+    const sheet = Buffer.from(zip['xl/worksheets/sheet1.xml']).toString('utf8');
+    expect(sheet).toContain('<dataValidation');
+    expect(sheet).toContain('conditionalFormatting');
+
+    const wb = XLSX.read(buffer, { type: 'buffer' });
+    expect(wb.SheetNames).toContain('Лист2');
+    expect(wb.SheetNames).toContain('_cache');
+  });
+
+  it("bo'sh RU/UZ maydonlarini mavjudidan to'ldiradi", () => {
+    const row = toUzumRow({ ...baseValues, titleUz: undefined }, []);
+    expect(row.values.titleUz).toBe('Кепка');
+    expect(row.values.descriptionUz).toBe('Ручная работа');
+    // Qisqa tavsif berilmasa — to'liq tavsifning boshidan
+    expect(row.values.shortRu).toBe('Ручная работа');
+    // Chegirmagacha narx majburiy — berilmasa sotuv narxi
+    expect(row.values.oldPrice).toBe('89000');
+    // SKU guruhi berilmasa — artikul
+    expect(row.values.skuGroup).toBe('K-1');
+  });
+
+  it('chegaradan oshgan matnni qisqartirib, ogohlantiradi', () => {
+    const { buffer, warnings } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, shortRu: 'x'.repeat(500) }, ['https://a.jpg']),
+    ]);
+    const trimmed = warnings.find((w) => w.column === 'Краткое описание RU');
+    expect(trimmed).toBeDefined();
+    expect(cell(readSheet(buffer), 'L', 4)).toHaveLength(390);
+  });
+
+  it("majburiy maydon bo'sh bo'lsa ogohlantiradi", () => {
+    const { warnings } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, mxik: undefined }, ['https://a.jpg']),
+    ]);
+    expect(warnings.some((w) => w.column === 'ИКПУ' && w.message.includes('majburiy'))).toBe(true);
+  });
+
+  it("rasmlar bitta katakka, birinchisi asosiy bo'lib tushadi", () => {
+    const { buffer } = fillUzumTemplate([
+      toUzumRow(baseValues, ['https://a.jpg', 'https://b.jpg']),
+    ]);
+    expect(cell(readSheet(buffer), 'T', 4)).toBe('https://a.jpg\nhttps://b.jpg');
+  });
+
+  it('bir nechta qator ketma-ket joylashadi', () => {
+    const { buffer } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, sku: 'A' }, ['https://a.jpg']),
+      toUzumRow({ ...baseValues, sku: 'B' }, ['https://b.jpg']),
+      toUzumRow({ ...baseValues, sku: 'C' }, ['https://c.jpg']),
+    ]);
+    const rows = readSheet(buffer);
+    expect(cell(rows, 'B', 4)).toBe('A');
+    expect(cell(rows, 'B', 5)).toBe('B');
+    expect(cell(rows, 'B', 6)).toBe('C');
+  });
+
+  it("shablon sig'imidan oshsa aniq xato beradi", () => {
+    const max = uzumMaxRows();
+
+    // Sig'im shablonning o'zidan hisoblanadi, qattiq yozilmagan.
+    // Ilgari kod 1000 ga ruxsat berardi, aslida 790 ta joy bor edi —
+    // ortiqchasi jimgina yo'qolardi.
+    expect(max).toBeGreaterThan(0);
+    expect(max).toBeLessThan(1000);
+
+    const tooMany = Array.from({ length: max + 1 }, () => toUzumRow(baseValues, ['https://x/1.jpg']));
+    expect(() => fillUzumTemplate(tooMany)).toThrow(new RegExp(String(max)));
+  });
+
+  it("sig'imga to'liq teng miqdor o'tadi", () => {
+    const max = uzumMaxRows();
+    const exact = Array.from({ length: max }, () => toUzumRow(baseValues, ['https://x/1.jpg']));
+    expect(() => fillUzumTemplate(exact)).not.toThrow();
+  });
+});

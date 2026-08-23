@@ -119,7 +119,7 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit(onSubmit)} className="glass bg-paper/70 p-7 sm:p-9 rounded-[28px] shadow-card border border-line/60 animate-fade-up backdrop-blur-xl">
             {serverError && (
-              <div className="mb-6 p-4 bg-red-50/50 border border-red-100 text-red-600 rounded-2xl text-[0.9rem] font-medium flex items-start gap-3">
+              <div className="mb-6 p-4 bg-red-500/10/50 border border-red-100 text-red-600 rounded-2xl text-[0.9rem] font-medium flex items-start gap-3">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0">
                   <circle cx="12" cy="12" r="10"></circle>
                   <line x1="12" y1="8" x2="12" y2="12"></line>

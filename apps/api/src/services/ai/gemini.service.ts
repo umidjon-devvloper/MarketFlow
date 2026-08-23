@@ -1,10 +1,14 @@
 /**
- * Google Gemini 1.5 Flash servisi
+ * Google Gemini servisi
  * OpenAI ishlamasa fallback sifatida ishlatiladi
+ *
+ * Model nomi env orqali almashtiriladi — gemini-1.5-* qatori to'xtatilgan,
+ * shuning uchun default 2.5-flash.
  */
 
-const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_API_URL = () => `${GEMINI_BASE_URL}/${GEMINI_MODEL}:generateContent`;
 
 export interface GeminiResponse {
   content: string;
@@ -48,7 +52,7 @@ export async function callGemini(
     };
   }
 
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+  const res = await fetch(`${GEMINI_API_URL()}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

@@ -147,3 +147,137 @@ export function getStocks(
     body: byIds ? { offerIds: offerIds!.slice(0, 500) } : {},
   });
 }
+
+// ─── KATEGORIYALAR ───────────────────────────────────────
+
+/**
+ * POST /v2/categories/tree — Market kategoriyalari daraxti.
+ *
+ * `marketCategoryId` yangi tovar uchun majburiy maydon, va u faqat shu
+ * daraxtdan olinadi. Daraxt katta va kamdan-kam o'zgaradi — keshlanadi.
+ */
+export function getCategoriesTree(apiKey: string, language = 'RU'): Promise<any> {
+  return yandexFetch(apiKey, '/v2/categories/tree', {
+    method: 'POST',
+    body: { language },
+  });
+}
+
+/**
+ * POST /v2/category/{categoryId}/parameters — shu kategoriyaning xarakteristikalari.
+ *
+ * Qaytgan `parameters` ro'yxatidan `required: true` bo'lganlari kartochkada
+ * to'ldirilishi shart, aks holda Yandex tovarni katalogda ko'rsatmaydi.
+ */
+export function getCategoryParameters(
+  apiKey: string,
+  categoryId: string | number,
+): Promise<any> {
+  return yandexFetch(apiKey, `/v2/category/${categoryId}/parameters`, {
+    method: 'POST',
+    body: {},
+  });
+}
+
+/**
+ * POST /v2/businesses/{businessId}/offer-mappings/update — tovar yaratish/yangilash.
+ *
+ * DIQQAT: businessId — kabinet identifikatori, campaignId EMAS.
+ * Ular boshqa-boshqa raqamlar; almashtirilsa Yandex 403 qaytaradi.
+ * campaignId dan businessId ni `resolveBusinessId()` beradi.
+ */
+export function updateOfferMappings(
+  apiKey: string,
+  businessId: string,
+  body: unknown,
+): Promise<any> {
+  return yandexFetch(apiKey, `/v2/businesses/${businessId}/offer-mappings/update`, {
+    method: 'POST',
+    body,
+  });
+}
+
+// ─── NARX VA QOLDIQ ──────────────────────────────────────
+
+/**
+ * PUT /v2/campaigns/{campaignId}/offers/stocks — qoldiqlarni yangilash.
+ *
+ * `sku` — sotuvchining o'z identifikatori (bizda Product.sku).
+ * Bir so'rovda 2000 tagacha, `items` har bir SKU uchun ANIQ bitta element.
+ */
+export function updateStocks(
+  apiKey: string,
+  campaignId: string,
+  items: Array<{ sku: string; count: number }>,
+): Promise<any> {
+  const now = new Date().toISOString();
+  return yandexFetch(apiKey, `/v2/campaigns/${campaignId}/offers/stocks`, {
+    method: 'PUT',
+    body: {
+      skus: items.slice(0, 2000).map((i) => ({
+        sku: i.sku,
+        items: [{ count: i.count, updatedAt: now }],
+      })),
+    },
+  });
+}
+
+/**
+ * POST /v2/businesses/{businessId}/offer-prices/updates — narxlarni yangilash.
+ *
+ * Kabinet darajasida ishlaydi (campaign emas) — narx barcha do'konlarga tegishli.
+ */
+export function updatePrices(
+  apiKey: string,
+  businessId: string,
+  items: Array<{ offerId: string; value: number; discountBase?: number }>,
+): Promise<any> {
+  return yandexFetch(apiKey, `/v2/businesses/${businessId}/offer-prices/updates`, {
+    method: 'POST',
+    body: {
+      offers: items.map((i) => ({
+        offerId: i.offerId,
+        price: {
+          value: i.value,
+          currencyId: 'RUR',
+          ...(i.discountBase ? { discountBase: i.discountBase } : {}),
+        },
+      })),
+    },
+  });
+}
+
+// ─── BUYURTMA AMALLARI ───────────────────────────────────
+
+/**
+ * PUT /v2/campaigns/{campaignId}/orders/{orderId}/status — holatni o'zgartirish.
+ *
+ * Tasdiqlash  → status PROCESSING, substatus STARTED
+ * Bekor qilish → status CANCELLED, substatus majburiy (sababni bildiradi)
+ *
+ * Yandex substatusni bekor qilishda ATAYIN majburiy qilgan: statistikada
+ * "sotuvchi aybi bilan bekor qilingan" (SHOP_FAILED) va "xaridor fikridan
+ * qaytdi" (USER_CHANGED_MIND) butunlay boshqacha hisoblanadi va reytingga
+ * har xil ta'sir qiladi.
+ */
+export function updateOrderStatus(
+  apiKey: string,
+  campaignId: string,
+  orderId: string,
+  status: 'PROCESSING' | 'CANCELLED',
+  substatus: string,
+): Promise<any> {
+  return yandexFetch(apiKey, `/v2/campaigns/${campaignId}/orders/${orderId}/status`, {
+    method: 'PUT',
+    body: { order: { status, substatus } },
+  });
+}
+
+/** Bekor qilish sabablari — Yandex ro'yxati qat'iy, API'dan olinmaydi */
+export const YANDEX_CANCEL_REASONS = [
+  { id: 'SHOP_FAILED', title: "Do'kon buyurtmani bajara olmaydi" },
+  { id: 'USER_CHANGED_MIND', title: 'Xaridor fikridan qaytdi' },
+  { id: 'USER_REFUSED_DELIVERY', title: 'Yetkazib berish shartlari to\'g\'ri kelmadi' },
+  { id: 'USER_REFUSED_PRODUCT', title: 'Tovar xaridorga mos kelmadi' },
+  { id: 'USER_UNREACHABLE', title: "Xaridor bilan bog'lanib bo'lmadi" },
+] as const;

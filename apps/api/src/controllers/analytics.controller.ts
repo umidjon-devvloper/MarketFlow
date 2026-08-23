@@ -5,22 +5,28 @@ export async function getOverview(req: Request, res: Response, next: NextFunctio
   try {
     const organizationId = req.organization!.id;
 
-    const [totalProducts, activeListings, draftListings, totalImages, aiJobs] =
-      await Promise.all([
-        prisma.product.count({ where: { organizationId } }),
-        prisma.listing.count({
-          where: { product: { organizationId }, status: 'PUBLISHED' },
-        }),
-        prisma.listing.count({
-          where: { product: { organizationId }, status: 'DRAFT' },
-        }),
-        prisma.productImage.count({
-          where: { product: { organizationId } },
-        }),
-        prisma.aiJob.count({
-          where: { product: { organizationId }, status: 'COMPLETED' },
-        }),
-      ]);
+    // Ilgari bu yerda 7 ta alohida so'rov ketardi va har biri connection band
+    // qilardi — dashboard bir vaqtda bir necha endpoint chaqirgani uchun pool
+    // to'lib, P2024 xatosi chiqardi. Endi status bo'yicha sanoqlar bitta
+    // groupBy ga birlashtirildi.
+    const [totalProducts, totalImages, aiJobs, listingsByStatus] = await Promise.all([
+      prisma.product.count({ where: { organizationId } }),
+      prisma.productImage.count({ where: { product: { organizationId } } }),
+      prisma.aiJob.count({
+        where: { product: { organizationId }, status: 'COMPLETED' },
+      }),
+      prisma.listing.groupBy({
+        by: ['status'],
+        where: { product: { organizationId } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const countByStatus = (status: string) =>
+      listingsByStatus.find((row) => row.status === status)?._count._all ?? 0;
+
+    const activeListings = countByStatus('PUBLISHED');
+    const draftListings = countByStatus('DRAFT');
 
     const marketplaceStats = await prisma.listing.groupBy({
       by: ['marketplace'],

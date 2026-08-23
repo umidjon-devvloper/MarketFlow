@@ -3,6 +3,7 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { prisma } from '../utils/prisma';
 import { HttpError } from '../middleware/error.middleware';
+import { invalidateOrgAccess } from '../middleware/org.middleware';
 
 // ============================================
 // Validatorlar
@@ -109,6 +110,9 @@ export async function createOrg(req: Request, res: Response, next: NextFunction)
         },
       },
     });
+
+    // "Tashkilotingiz yo'q" natijasi keshda qolib ketmasin
+    invalidateOrgAccess(userId);
 
     res.status(201).json({ organization: org });
   } catch (err) {
@@ -224,6 +228,9 @@ export async function updateMember(req: Request, res: Response, next: NextFuncti
       data: { role: data.role },
     });
 
+    // Yangi rol darhol kuchga kirsin
+    invalidateOrgAccess(updated.userId);
+
     res.json({ member: updated });
   } catch (err) {
     next(err);
@@ -247,7 +254,11 @@ export async function removeMember(req: Request, res: Response, next: NextFuncti
       throw new HttpError(400, 'OWNER ni chiqarib bo\'lmaydi');
     }
 
-    await prisma.membership.delete({ where: { id } });
+    const removed = await prisma.membership.delete({ where: { id } });
+
+    // Chiqarilgan xodim keshdagi ruxsatidan darhol mahrum bo'lsin
+    invalidateOrgAccess(removed.userId);
+
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -455,6 +466,9 @@ export async function acceptInvitation(req: Request, res: Response, next: NextFu
         },
       }),
     ]);
+
+    // Yangi a'zolik darhol ko'rinsin (aks holda "tashkilotingiz yo'q" keshda qolardi)
+    invalidateOrgAccess(userId);
 
     res.json({
       success: true,

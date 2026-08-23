@@ -21,7 +21,7 @@ export const openapiSpec = {
   openapi: '3.0.3',
   info: {
     title: 'MarketFlow API',
-    version: '4.2',
+    version: '4.3',
     description:
       "Marketplace (Uzum, Wildberries, Ozon, Yandex) mahsulotlarini boshqarish, AI kontent generatsiyasi, analitika va ommaviy import uchun REST API.\n\n" +
       "**Autentifikatsiya:** `POST /api/auth/login` orqali `accessToken` oling va uni `Authorization: Bearer <token>` sarlavhasida yuboring.\n\n" +
@@ -41,6 +41,10 @@ export const openapiSpec = {
     { name: 'Marketplaces', description: 'Marketplace integratsiyalari' },
     { name: 'Analytics', description: 'Analitika' },
     { name: 'Import', description: 'Ommaviy import (Excel)' },
+    { name: 'Cards', description: "Marketplace kartochkalari: spetsifikatsiya, kategoriya, joylash, Excel" },
+    { name: 'Orders', description: "Buyurtmalar — to'rttala marketplace bitta ro'yxatda" },
+    { name: 'Sync', description: 'Marketplace sinxronizatsiyasi' },
+    { name: 'Alerts', description: 'Qoldiq xabarnomalari' },
     { name: 'System', description: 'Tizim' },
   ],
   components: {
@@ -180,6 +184,399 @@ export const openapiSpec = {
     },
   },
   paths: {
+    // ─── Kartochkalar (v4.3) ───────────────────────────────
+    '/api/cards/specs': {
+      get: {
+        tags: ['Cards'],
+        summary: "Marketplace ro'yxati va rasm talablari",
+        security: bearerAuth,
+        responses: { 200: { description: "Spetsifikatsiya qisqacha ma'lumoti" } },
+      },
+    },
+    '/api/cards/specs/{marketplace}': {
+      get: {
+        tags: ['Cards'],
+        summary: "Bitta marketplace'ning to'liq maydonlari",
+        security: bearerAuth,
+        parameters: [
+          {
+            name: 'marketplace',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['uzum', 'ozon', 'wb', 'yandex'] },
+          },
+        ],
+        responses: { 200: { description: 'Maydonlar, guruhlar, rasm talablari' }, 404: { description: "Marketplace yo'q" } },
+      },
+    },
+    '/api/cards/categories/{marketplace}': {
+      get: {
+        tags: ['Cards'],
+        summary: 'Kategoriya katalogidan qidirish',
+        description:
+          "Ozon, WB va Yandex kartochka yaratishda raqamli kategoriya ID talab qiladi. " +
+          "Ro'yxat marketplace katalogidan olinadi, ya'ni ulanish faol bo'lishi shart. " +
+          "Uzum'da kategoriyani Excel shablonidagi makros to'ldiradi — bu yerda katalog yo'q.",
+        security: bearerAuth,
+        parameters: [
+          {
+            name: 'marketplace',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['ozon', 'wb', 'yandex'] },
+          },
+          { name: 'q', in: 'query', schema: { type: 'string' }, description: 'Qidiruv matni' },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 30, maximum: 100 } },
+          orgHeader,
+        ],
+        responses: {
+          200: { description: "id, name, path va (Ozon uchun) typeId bo'lgan ro'yxat" },
+          400: { description: "Marketplace ulanmagan yoki Uzum so'ralgan" },
+          502: { description: 'Marketplace katalogini ochib bo\'lmadi' },
+        },
+      },
+    },
+    '/api/cards/{productId}/publish/{marketplace}': {
+      post: {
+        tags: ['Cards'],
+        summary: "Kartochkani API orqali joylash",
+        description:
+          "Uzum qo'llab-quvvatlamaydi (Seller API'da kartochka yaratish yo'q). " +
+          "Ozon va WB asinxron ishlaydi — javobdagi `pending: true` bo'lsa natijani " +
+          '`GET /api/cards/{productId}/publish-status/{marketplace}` bilan tekshiring.',
+        security: bearerAuth,
+        parameters: [
+          { name: 'productId', in: 'path', required: true, schema: { type: 'string' } },
+          {
+            name: 'marketplace',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['ozon', 'wb', 'yandex'] },
+          },
+          orgHeader,
+        ],
+        responses: {
+          200: { description: 'Yuborildi (pending bo\'lishi mumkin)' },
+          400: { description: "To'ldirilmagan maydon yoki ulanish yo'q" },
+          502: { description: 'Marketplace rad etdi' },
+        },
+      },
+    },
+    '/api/cards/{productId}/publish-status/{marketplace}': {
+      get: {
+        tags: ['Cards'],
+        summary: 'Joylash natijasini tekshirish',
+        description:
+          "Ozon uchun import vazifasi holatini, WB uchun kartochkani topib rasmlarni biriktiradi.",
+        security: bearerAuth,
+        parameters: [
+          { name: 'productId', in: 'path', required: true, schema: { type: 'string' } },
+          { name: 'marketplace', in: 'path', required: true, schema: { type: 'string' } },
+          orgHeader,
+        ],
+        responses: {
+          200: { description: 'Natija yoki hali kutilmoqda' },
+          400: { description: "Kartochka yuborilmagan yoki ulanish yo'q" },
+        },
+      },
+    },
+    '/api/cards/export': {
+      post: {
+        tags: ['Cards'],
+        summary: 'Marketplace formatida Excel',
+        description:
+          "Uzum uchun rasmiy .xlsm shabloni to'ldiriladi (makros va validatsiya saqlanadi), " +
+          "qolganlari uchun .xlsx yaratiladi. Ogohlantirishlar `X-Export-Warnings` sarlavhasida qaytadi.",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: {
+          200: { description: 'Excel fayl' },
+          400: { description: "Shablon sig'imidan oshdi" },
+        },
+      },
+    },
+
+    '/api/cards/sync-price-stock': {
+      post: {
+        tags: ['Cards'],
+        summary: "Narx va qoldiqni marketplace'ga yuborish",
+        description:
+          "Ma'lumot teskari yo'nalishda: MarketFlow → marketplace.\n\n" +
+          "**Valyuta xavfsizligi:** narx FAQAT o'sha marketplace uchun kiritilgan " +
+          "qiymatdan olinadi. Boshqa valyutadagi qiymatga tushish ATAYIN qilinmagan — " +
+          "234 000 so'm Ozon'da 234 000 rubl bo'lib qolardi. Narx topilmasa u " +
+          "yuborilmaydi, lekin qoldiq baribir ketadi (qoldiq valyutaga bog'liq emas).\n\n" +
+          "**`dryRun: true`** — nima yuborilishini qaytaradi, marketplace'ga tegmaydi. " +
+          "Narx qaytarib bo'lmaydigan o'zgarish bo'lgani uchun UI shu rejimni oldindan chaqiradi.\n\n" +
+          "Uzum ham qo'llab-quvvatlanadi (kartochka yaratishdan farqli).",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: {
+          200: { description: 'pricesUpdated, stocksUpdated, failed, skipped, warnings' },
+          400: { description: "Marketplace ulanmagan yoki yuboriladigan tovar yo'q" },
+          502: { description: 'Marketplace rad etdi' },
+        },
+      },
+    },
+    '/api/cards/bulk-category': {
+      post: {
+        tags: ['Cards'],
+        summary: "Bir nechta kartochkaga bitta kategoriyani birdan qo'yish",
+        description:
+          "Faqat `categoryId` yozilmaydi: kartochka boshqa marketplace uchun to'ldirilgan " +
+          "bo'lsa, qolgan maydonlar ham ko'chiriladi (birliklar o'girilib, ro'yxatdan " +
+          "tanlanadiganlari moslashtirilib). Aks holda kategoriya qo'yish holatni " +
+          "yaxshilash o'rniga buzardi — joylash paytidagi zaxira qiymatlarga tushish " +
+          "mantig'i ishlamay qolardi.\n\n" +
+          "Javobda `ready` (joylashga tayyor bo'lganlar) va `stillMissing` " +
+          "(boshqa maydonlari yetishmayotganlar) qaytadi.",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: {
+          200: { description: 'updated, ready, stillMissing' },
+          400: { description: "Kategoriya tanlanmagan yoki Ozon uchun tovar turi yo'q" },
+        },
+      },
+    },
+    '/api/cards/publish-batch': {
+      post: {
+        tags: ['Cards'],
+        summary: "Kartochkalarni joylash navbatiga qo'shish",
+        description:
+          "Darhol yubormaydi — cron vazifalarni ketma-ket olib boradi, chunki marketplace " +
+          "limitlari sotuvchi bo'yicha hisoblanadi. Kategoriya tanlanmagan yoki majburiy " +
+          "maydoni bo'sh mahsulotlar navbatga qo'shilmaydi va `skipped` da sabab bilan qaytadi.",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: {
+          202: { description: "Navbatga qo'shildi" },
+          400: { description: "Hech bir mahsulot o'tmadi yoki marketplace ulanmagan" },
+        },
+      },
+    },
+    '/api/cards/publish-jobs': {
+      get: {
+        tags: ['Cards'],
+        summary: 'Navbat holati',
+        description: "Vazifalar ro'yxati va holatlar bo'yicha sanoq. `active: true` bo'lsa ish davom etyapti.",
+        security: bearerAuth,
+        parameters: [
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['QUEUED', 'RUNNING', 'PENDING', 'DONE', 'FAILED', 'CANCELLED'] },
+          },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 50, maximum: 200 } },
+          orgHeader,
+        ],
+        responses: { 200: { description: 'items, counts, active' } },
+      },
+    },
+    '/api/cards/publish-jobs/cancel': {
+      post: {
+        tags: ['Cards'],
+        summary: 'Boshlanmagan vazifalarni bekor qilish',
+        description:
+          "Faqat QUEUED va PENDING vazifalar bekor qilinadi. Marketplace'ga allaqachon " +
+          "yuborilganini to'xtatib bo'lmaydi.",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: { 200: { description: 'Bekor qilinganlar soni' } },
+      },
+    },
+
+    // ─── Buyurtmalar ───────────────────────────────────────
+    '/api/orders': {
+      get: {
+        tags: ['Orders'],
+        summary: "To'rttala marketplace buyurtmalari bitta ro'yxatda",
+        description:
+          "Ma'lumot keshdan o'qiladi (cron har 3 soatda to'ldiradi), jonli so'rov " +
+          "yuborilmaydi. Sabab: WB statistikasi daqiqasiga 1 ta so'rovga ruxsat beradi. " +
+          "Keshdan o'qishning yon foydasi — to'rt bozorni sana bo'yicha birga saralash, " +
+          "bu jonli so'rovlarda umuman imkonsiz.",
+        security: bearerAuth,
+        parameters: [
+          { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 30, maximum: 100 } },
+          {
+            name: 'marketplace',
+            in: 'query',
+            schema: { type: 'string', enum: ['uzum', 'ozon', 'wb', 'yandex'] },
+          },
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string' },
+            description: "Marketplace o'z atamasi bilan (NEW, Собран, CANCELED…)",
+          },
+          { name: 'days', in: 'query', schema: { type: 'integer', maximum: 180 } },
+          { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Buyurtma raqami yoki tovar nomi' },
+          orgHeader,
+        ],
+        responses: { 200: { description: 'items, syncedAt, pagination' } },
+      },
+    },
+    '/api/orders/summary': {
+      get: {
+        tags: ['Orders'],
+        summary: "Marketplace bo'yicha kesim va mavjud holatlar",
+        description:
+          "Holatlar ro'yxati qattiq yozilmagan — har bir marketplace o'z atamalarini " +
+          "ishlatadi, shuning uchun mavjud qiymatlar keshdan yig'iladi. Javobda oxirgi " +
+          "sinxronizatsiya holati ham bor: ro'yxat to'liq emasligini shundan bilinadi.",
+        security: bearerAuth,
+        parameters: [
+          { name: 'days', in: 'query', schema: { type: 'integer', default: 30, maximum: 180 } },
+          orgHeader,
+        ],
+        responses: { 200: { description: 'marketplaces, statuses' } },
+      },
+    },
+    '/api/orders/{id}/actions': {
+      get: {
+        tags: ['Orders'],
+        summary: 'Bu buyurtma bilan nima qilish mumkin',
+        description:
+          "UI tugmalarni shu javobga qarab chizadi. Imkoniyatlar bozorga qarab farq qiladi:\n\n" +
+          "| | Tasdiqlash | Bekor qilish |\n|---|---|---|\n" +
+          "| Uzum | ✅ | ✅ sababsiz |\n" +
+          "| Yandex | ✅ | ✅ sabab majburiy |\n" +
+          "| Ozon | ❌ FBS oqimida bunday qadam yo'q | ✅ sabab ID kerak |\n" +
+          "| WB | ❌ | ❌ |\n\n" +
+          "**WB nega yopiq:** keshdagi ID statistika API'sidan olingan `srid`, bekor qilish esa " +
+          "FBS yig'ish buyurtmasining boshqa identifikatorini talab qiladi. Taxminan " +
+          "moslashtirish — boshqa buyurtmani bekor qilish xavfi.\n\n" +
+          "Ozon uchun bekor qilish sabablari API'dan so'raladi (ular jo'natmaga qarab farq qiladi).",
+        security: bearerAuth,
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          orgHeader,
+        ],
+        responses: { 200: { description: 'canConfirm, canCancel, cancelNeedsReason, reasons, notes' } },
+      },
+    },
+    '/api/orders/{id}/confirm': {
+      post: {
+        tags: ['Orders'],
+        summary: 'Buyurtmani tasdiqlash',
+        description:
+          "HAQIQIY mijoz buyurtmasiga ta'sir qiladi. Faqat OWNER va ADMIN. " +
+          "Qo'llab-quvvatlanmagan marketplace'da so'rov marketplace'ga UMUMAN yuborilmaydi.",
+        security: bearerAuth,
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          orgHeader,
+        ],
+        responses: {
+          200: { description: 'Tasdiqlandi' },
+          400: { description: "Marketplace qo'llab-quvvatlamaydi yoki ulanmagan" },
+          403: { description: 'Ruxsat yetarli emas' },
+        },
+      },
+    },
+    '/api/orders/{id}/cancel': {
+      post: {
+        tags: ['Orders'],
+        summary: 'Buyurtmani bekor qilish',
+        description:
+          "QAYTARIB BO'LMAYDI va sotuvchi reytingiga yoziladi. Faqat OWNER va ADMIN.\n\n" +
+          "`reasonId` — Yandex uchun substatus (SHOP_FAILED, USER_CHANGED_MIND…), " +
+          "Ozon uchun raqamli `cancel_reason_id`. Ikkalasida ham majburiy. " +
+          "Sabab statistikaga yoziladi: \"do'kon aybi\" va \"xaridor fikridan qaytdi\" " +
+          'reytingga har xil ta\'sir qiladi.',
+        security: bearerAuth,
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          orgHeader,
+        ],
+        responses: {
+          200: { description: 'Bekor qilindi' },
+          400: { description: "Sabab yo'q yoki marketplace qo'llab-quvvatlamaydi" },
+          403: { description: 'Ruxsat yetarli emas' },
+        },
+      },
+    },
+    '/api/orders/{id}': {
+      get: {
+        tags: ['Orders'],
+        summary: 'Bitta buyurtma, pozitsiyalari bilan',
+        security: bearerAuth,
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+          orgHeader,
+        ],
+        responses: { 200: { description: 'Buyurtma' }, 404: { description: 'Topilmadi' } },
+      },
+    },
+
+    // ─── Sinxronizatsiya ───────────────────────────────────
+    '/api/sync/run': {
+      post: {
+        tags: ['Sync'],
+        summary: "Tashkilotning barcha ulanishlarini hozir sinxronlash",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: { 200: { description: 'Har bir marketplace bo\'yicha natija' } },
+      },
+    },
+    '/api/sync/status': {
+      get: {
+        tags: ['Sync'],
+        summary: "Oxirgi sinxronizatsiya holati",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: { 200: { description: "Marketplace bo'yicha oxirgi urinishlar" } },
+      },
+    },
+    '/api/sync/trend': {
+      get: {
+        tags: ['Sync'],
+        summary: "Kunlik kesimlar tarixi",
+        description: "MarketplaceSnapshot jadvalidan — buyurtma, daromad va qoldiq dinamikasi.",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: { 200: { description: 'Kunlik qatorlar' } },
+      },
+    },
+
+    // ─── Qoldiq xabarnomalari ──────────────────────────────
+    '/api/alerts/settings': {
+      get: {
+        tags: ['Alerts'],
+        summary: 'Qoldiq xabarnomasi sozlamalari',
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: { 200: { description: 'Chegara, qabul qiluvchilar, pochta holati' } },
+      },
+      patch: {
+        tags: ['Alerts'],
+        summary: 'Sozlamalarni yangilash',
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: { 200: { description: 'Yangilandi' } },
+      },
+    },
+    '/api/alerts/test': {
+      post: {
+        tags: ['Alerts'],
+        summary: 'Sinov xati yuborish',
+        description: "Gmail sozlamalari to'g'riligini tekshirish uchun.",
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: { 200: { description: 'Yuborildi' }, 400: { description: 'Pochta sozlanmagan' } },
+      },
+    },
+    '/api/alerts/run': {
+      post: {
+        tags: ['Alerts'],
+        summary: 'Qoldiq tekshiruvini hozir ishga tushirish',
+        security: bearerAuth,
+        parameters: [orgHeader],
+        responses: { 200: { description: 'Tekshiruv natijasi' } },
+      },
+    },
+
     '/health': {
       get: {
         tags: ['System'],

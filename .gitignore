@@ -51,3 +51,6 @@ logs
 # IDE
 .vscode/
 .idea/
+
+# yuklangan rasmlar (UPLOADTHING_TOKEN yo'q paytdagi zaxira)
+apps/api/uploads/

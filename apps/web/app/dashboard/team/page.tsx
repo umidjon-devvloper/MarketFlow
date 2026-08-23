@@ -15,6 +15,10 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmDialog';
+import { SkeletonRows } from '@/components/Skeleton';
+import { Avatar } from '@/components/RemoteImage';
 
 interface Member {
   id: string;
@@ -48,6 +52,8 @@ export default function TeamPage() {
   const canManage = hasRole('OWNER', 'ADMIN');
   const isOwner = hasRole('OWNER');
 
+  const toast = useToast();
+  const confirm = useConfirm();
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,27 +87,39 @@ export default function TeamPage() {
       await api.patch(`/orgs/current/members/${memberId}`, { role: newRole });
       loadAll();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Xato');
+      toast('error', err.response?.data?.error || 'Xato yuz berdi');
     }
   }
 
   async function handleRemove(memberId: string, name: string) {
-    if (!confirm(`${name} ni tashkilotdan chiqarmoqchimisiz?`)) return;
+    const ok = await confirm({
+      title: `${name} tashkilotdan chiqarilsinmi?`,
+      description: "U endi tashkilot mahsulotlarini ko'ra olmaydi. Keyinroq qayta taklif qilish mumkin.",
+      confirmLabel: 'Ha, chiqarilsin',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/orgs/current/members/${memberId}`);
       loadAll();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Xato');
+      toast('error', err.response?.data?.error || 'Xato yuz berdi');
     }
   }
 
   async function handleRevokeInvite(id: string) {
-    if (!confirm('Taklifni bekor qilmoqchimisiz?')) return;
+    const ok = await confirm({
+      title: 'Taklif bekor qilinsinmi?',
+      description: "Yuborilgan havola ishlamay qoladi. Kerak bo'lsa yangi taklif yuborasiz.",
+      confirmLabel: 'Ha, bekor qilinsin',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/orgs/current/invitations/${id}`);
       loadAll();
     } catch (err) {
-      alert('Xato');
+      toast('error', 'Xato yuz berdi');
     }
   }
 
@@ -110,12 +128,12 @@ export default function TeamPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">Jamoa</h1>
-          <p className="text-slate-600 mt-1">Tashkilot a'zolarini boshqaring</p>
+          <p className="text-ink-soft mt-1">Tashkilot a'zolarini boshqaring</p>
         </div>
         {canManage && (
           <button
             onClick={() => setShowInvite(true)}
-            className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
+            className="inline-flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg hover:opacity-90 font-medium"
           >
             <UserPlus className="w-4 h-4" />
             Xodim taklif qilish
@@ -124,12 +142,12 @@ export default function TeamPage() {
       </div>
 
       {loading ? (
-        <div className="text-slate-500">Yuklanmoqda...</div>
+        <div className="card"><SkeletonRows rows={3} /></div>
       ) : (
         <div className="space-y-6">
           {/* A'zolar */}
-          <div className="bg-white rounded-xl border overflow-hidden">
-            <div className="p-4 border-b bg-slate-50">
+          <div className="card overflow-hidden">
+            <div className="p-4 border-b bg-panel">
               <h2 className="font-semibold">A'zolar ({members.length})</h2>
             </div>
             <div className="divide-y">
@@ -138,22 +156,14 @@ export default function TeamPage() {
                 const Icon = info.icon;
                 return (
                   <div key={m.id} className="p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      {m.user.avatar ? (
-                        <img
-                          src={m.user.avatar}
-                          alt=""
-                          className="w-full h-full rounded-full object-cover"
-                        />
-                      ) : (
-                        <span className="font-semibold text-sm">
-                          {m.user.fullName.charAt(0)}
-                        </span>
-                      )}
-                    </div>
+                    <Avatar
+                      src={m.user.avatar}
+                      name={m.user.fullName}
+                      className="w-10 h-10 bg-panel rounded-full flex-shrink-0 font-semibold text-sm"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium">{m.user.fullName}</p>
-                      <p className="text-sm text-slate-500 truncate">{m.user.email}</p>
+                      <p className="text-sm text-muted truncate">{m.user.email}</p>
                     </div>
                     <div
                       className={`px-2 py-1 rounded text-xs font-medium bg-${info.color}-50 text-${info.color}-700 flex items-center gap-1`}
@@ -177,7 +187,8 @@ export default function TeamPage() {
                         {isOwner && (
                           <button
                             onClick={() => handleRemove(m.id, m.user.fullName)}
-                            className="p-1.5 hover:bg-red-50 rounded text-red-600"
+                            aria-label={`${m.user.fullName} ni tashkilotdan chiqarish`}
+                            className="p-1.5 hover:bg-red-500/10 rounded text-red-600"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -192,8 +203,8 @@ export default function TeamPage() {
 
           {/* Kutilayotgan takliflar */}
           {canManage && invitations.length > 0 && (
-            <div className="bg-white rounded-xl border overflow-hidden">
-              <div className="p-4 border-b bg-slate-50">
+            <div className="card overflow-hidden">
+              <div className="p-4 border-b bg-panel">
                 <h2 className="font-semibold">Kutilayotgan takliflar ({invitations.length})</h2>
               </div>
               <div className="divide-y">
@@ -204,7 +215,7 @@ export default function TeamPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium">{inv.email}</p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-muted">
                         {new Date(inv.createdAt).toLocaleDateString('uz-UZ')} da yuborilgan •{' '}
                         {inv.sender.fullName}
                       </p>
@@ -214,7 +225,8 @@ export default function TeamPage() {
                     </span>
                     <button
                       onClick={() => handleRevokeInvite(inv.id)}
-                      className="p-1.5 hover:bg-red-50 rounded text-red-600"
+                      aria-label={`${inv.email} ga yuborilgan taklifni bekor qilish`}
+                      className="p-1.5 hover:bg-red-500/10 rounded text-red-600"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -253,6 +265,7 @@ function InviteModal({
   onCreated: (url: string) => void;
   newInviteUrl: string | null;
 }) {
+  const toast = useToast();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'ADMIN' | 'STAFF'>('STAFF');
   const [loading, setLoading] = useState(false);
@@ -265,7 +278,7 @@ function InviteModal({
       const { data } = await api.post('/orgs/current/invitations', { email, role });
       onCreated(data.inviteUrl);
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Xato');
+      toast('error', err.response?.data?.error || 'Xato yuz berdi');
     } finally {
       setLoading(false);
     }
@@ -280,10 +293,10 @@ function InviteModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full">
+      <div className="bg-paper rounded-xl max-w-md w-full">
         <div className="p-6 border-b">
           <h2 className="text-lg font-semibold">Xodim taklif qilish</h2>
-          <p className="text-sm text-slate-600">Yangi jamoa a'zosini email orqali chaqiring</p>
+          <p className="text-sm text-ink-soft">Yangi jamoa a'zosini email orqali chaqiring</p>
         </div>
 
         {!newInviteUrl ? (
@@ -295,7 +308,7 @@ function InviteModal({
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/40"
                 placeholder="employee@example.com"
               />
             </div>
@@ -305,7 +318,7 @@ function InviteModal({
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as 'ADMIN' | 'STAFF')}
-                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/40"
               >
                 <option value="STAFF">Xodim — mahsulot yaratish/tahrirlash</option>
                 <option value="ADMIN">Admin — to'liq boshqaruv (o'chirishdan tashqari)</option>
@@ -316,14 +329,14 @@ function InviteModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 border border-slate-300 py-2 rounded-lg font-medium hover:bg-slate-50"
+                className="flex-1 border border-line py-2 rounded-lg font-medium hover:bg-panel"
               >
                 Bekor qilish
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 bg-accent text-white py-2 rounded-lg font-medium hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                 Taklif jo'natish
@@ -332,29 +345,29 @@ function InviteModal({
           </form>
         ) : (
           <div className="p-6 space-y-4">
-            <div className="bg-green-50 border border-green-200 p-4 rounded-lg">
+            <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-lg">
               <p className="text-sm font-medium text-green-900 mb-2">✅ Taklif yaratildi!</p>
-              <p className="text-xs text-green-700">
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">
                 Quyidagi havolani xodimga jo'nating. U 7 kun amal qiladi.
               </p>
             </div>
 
             <div>
-              <label className="block text-xs font-medium mb-1 text-slate-600">
+              <label className="block text-xs font-medium mb-1 text-ink-soft">
                 Taklif havolasi
               </label>
               <div className="flex gap-2">
                 <input
                   value={newInviteUrl}
                   readOnly
-                  className="flex-1 px-3 py-2 border rounded-lg text-xs bg-slate-50 font-mono"
+                  className="flex-1 px-3 py-2 border rounded-lg text-xs bg-panel font-mono"
                 />
                 <button
                   onClick={handleCopy}
-                  className="px-3 py-2 border rounded-lg hover:bg-slate-50"
+                  className="px-3 py-2 border rounded-lg hover:bg-panel"
                 >
                   {copied ? (
-                    <Check className="w-4 h-4 text-green-600" />
+                    <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   ) : (
                     <Copy className="w-4 h-4" />
                   )}
@@ -364,7 +377,7 @@ function InviteModal({
 
             <button
               onClick={onClose}
-              className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700"
+              className="w-full bg-accent text-white py-2 rounded-lg font-medium hover:opacity-90"
             >
               Yopish
             </button>

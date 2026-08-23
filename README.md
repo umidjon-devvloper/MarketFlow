@@ -1,4 +1,4 @@
-# 🚀 MarketFlow — To'liq loyiha (v4.4)
+# 🚀 MarketFlow — To'liq loyiha (v4.9)
 
 **Uzum, Ozon, Wildberries, Yandex Market uchun yagona mahsulot boshqaruv platformasi.**
 
@@ -36,9 +36,43 @@ marketflow/
 - **Higgsfield** — rasm AI (fon o'chirish, upscale)
 
 ### 🏪 Marketplace ulash
-- Uzum Business API kalitlar (shifrlangan)
-- Ozon, WB, Yandex uchun ma'lumot eksport (JSON)
-- Uzum'dan mahsulot ma'lumotini olish (skreping)
+- Barcha kalitlar AES-256-GCM bilan shifrlangan holda saqlanadi
+- **Kategoriya katalogi** — Ozon, WB va Yandex katalogidan qidirib tanlash
+  (kartochka yaratish uchun raqamli ID majburiy, uni faqat shu yerdan olish mumkin)
+- **To'g'ridan-to'g'ri joylash:**
+
+  | Marketplace | Usul | Endpoint |
+  |---|---|---|
+  | Uzum | Excel (.xlsm) | API'da kartochka yaratish yo'q |
+  | Ozon | API | `POST /v3/product/import` |
+  | Wildberries | API | `POST /content/v2/cards/upload` + `content/v3/media/save` |
+  | Yandex | API | `POST /v2/businesses/{id}/offer-mappings/update` |
+
+- **Ommaviy joylash** — mahsulotlarni tanlab navbatga qo'yasiz, server ketma-ket
+  yuboradi (limitlar sotuvchi bo'yicha hisoblanadi). Sahifani yopsangiz ham davom etadi
+- Ozon va WB asinxron ishlaydi — natija avtomatik tekshiriladi va holat ko'rsatiladi
+- **Narx va qoldiqni orqaga yuborish** — MarketFlow'da o'zgartirasiz, to'rttala
+  platformaga ketadi. Valyuta qat'iy tekshiriladi: UZS narx RUB bozoriga yuborilmaydi
+- Qoldiq/buyurtma sinxronizatsiyasi (cron, har 3 soatda)
+- Kam qolgan mahsulot haqida email xabarnoma
+
+### 🧾 Buyurtmalar
+- To'rttala marketplace buyurtmasi **bitta ro'yxatda**, sana bo'yicha saralangan
+- Marketplace, holat, davr va matn bo'yicha filtr
+- Pozitsiyalari bilan (tovar, artikul, soni, narx)
+- Keshdan o'qiladi — sahifa darhol ochiladi. Jonli so'rov mumkin emas:
+  WB statistikasi daqiqasiga 1 ta so'rovga ruxsat beradi
+- **Tasdiqlash va bekor qilish** (OWNER/ADMIN):
+
+  | | Tasdiqlash | Bekor qilish |
+  |---|---|---|
+  | Uzum | ✅ | ✅ sababsiz |
+  | Yandex | ✅ | ✅ sabab majburiy |
+  | Ozon | ❌ FBS oqimida bunday qadam yo'q | ✅ sabab ID kerak |
+  | WB | ❌ | ❌ ID mos kelmaydi |
+
+  Tugmalar server javobiga qarab chiziladi — imkoniyat yo'q joyda tugma
+  ko'rsatilmaydi va sababi aytiladi
 
 ### 📊 Analytics
 - Recharts bilan grafiklar
@@ -153,6 +187,32 @@ cd apps/mobile && npm start      # Expo QR
 - `POST /api/import/preview` (multipart)
 - `POST /api/import/execute`
 
+### Kartochkalar (v4.3+)
+- `GET /api/cards/specs` — marketplace ro'yxati va rasm talablari
+- `GET /api/cards/specs/:marketplace` — to'liq maydonlar
+- `GET /api/cards/categories/:marketplace?q=` — kategoriya katalogidan qidirish
+- `POST /api/cards/:productId/publish/:marketplace` — API orqali joylash
+- `GET /api/cards/:productId/publish-status/:marketplace` — natijani tekshirish
+- `POST /api/cards/sync-price-stock` — narx/qoldiqni yuborish (`dryRun` bilan oldindan ko'rish)
+- `POST /api/cards/bulk-category` — bir nechta kartochkaga bitta kategoriya
+- `POST /api/cards/publish-batch` — ommaviy joylash navbatiga qo'shish
+- `GET /api/cards/publish-jobs` — navbat holati
+- `POST /api/cards/publish-jobs/cancel` — boshlanmaganlarini bekor qilish
+- `POST /api/cards/export` — marketplace formatida Excel
+
+### Buyurtmalar
+- `GET /api/orders?marketplace=&status=&days=&search=` — yagona ro'yxat
+- `GET /api/orders/summary?days=30` — marketplace kesimi va mavjud holatlar
+- `GET /api/orders/:id` — bitta buyurtma
+- `GET /api/orders/:id/actions` — imkoniyatlar va bekor qilish sabablari
+- `POST /api/orders/:id/confirm` · `POST /api/orders/:id/cancel` (OWNER/ADMIN)
+
+### Sinxronizatsiya va xabarnomalar
+- `GET /api/sync/status` · `POST /api/sync/run` · `GET /api/sync/trend`
+- `GET/PATCH /api/alerts/settings` · `POST /api/alerts/test`
+
+To'liq hujjat: **`GET /api/docs`** (Swagger UI)
+
 ### Analytics
 - `GET /api/analytics/overview`
 - `GET /api/analytics/timeseries?days=30`
@@ -187,14 +247,19 @@ cd apps/mobile && npm start      # Expo QR
 - [x] **4.1** — Multi-user + Organization + Team
 - [x] **4.2** — Bulk import (Excel/CSV)
 - [x] **4.4** — Mobile ilova (Expo)
+- [x] **4.5** — Marketplace kartochkalari: kategoriya katalogi, to'g'ridan-to'g'ri
+      joylash (Ozon/WB/Yandex), Uzum .xlsm shabloni, qoldiq sinxronizatsiyasi
+- [x] **4.6** — Ommaviy joylash navbati, rasm optimizatsiyasi (next/image),
+      umumiy dizayn token'lari (`packages/shared`)
+- [x] **4.7** — Narx va qoldiqni orqaga yuborish, ommaviy kategoriya tanlash
+- [x] **4.8** — Buyurtmalar bo'limi (4 bozor bitta ro'yxatda, keshdan)
+- [x] **4.9** — Buyurtmani tasdiqlash va bekor qilish
 
 ## 🔮 Kelajak
 
-- [ ] **4.3** — Real deploy (Vercel + Neon)
-- [ ] Email jo'natish (Resend)
-- [ ] Uzum profile analytics
-- [ ] Ozon/WB API integratsiyasi
+- [ ] Kartochka sifat bahosi (0–100)
 - [ ] Barcode scanner (mobile)
+- [ ] Real deploy (Vercel + Neon)
 
 ## 🚢 Deploy
 

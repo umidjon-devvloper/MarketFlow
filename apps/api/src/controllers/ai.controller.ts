@@ -7,6 +7,7 @@ import {
   upscaleImage,
   checkJobStatus,
   waitForJob,
+  HiggsfieldError,
 } from '../services/higgsfield.service';
 import {
   generateListingText,
@@ -14,6 +15,19 @@ import {
   ProductInput,
   Marketplace,
 } from '../services/ai/text-generator.service';
+
+/**
+ * Higgsfield xatosini foydalanuvchiga ko'rsatiladigan HttpError'ga o'girish.
+ *
+ * Xizmatning o'zi ishlamayotgan bo'lsa — 503: bu foydalanuvchi aybi emas va
+ * frontend uni "qayta urinib ko'ring" deb ko'rsatishi kerak, xato sifatida emas.
+ */
+function toHiggsfieldHttpError(err: unknown): HttpError {
+  if (err instanceof HiggsfieldError) {
+    return new HttpError(err.isDown ? 503 : err.status && err.status < 500 ? 400 : 502, err.message);
+  }
+  return new HttpError(502, `Higgsfield xato: ${(err as Error)?.message ?? 'nomaʼlum'}`);
+}
 
 const removeBackgroundSchema = z.object({
   imageId: z.string(),
@@ -107,7 +121,7 @@ export async function removeBackgroundController(
         where: { id: aiJob.id },
         data: { status: 'FAILED', error: hfErr.message },
       });
-      throw new HttpError(500, `Higgsfield xato: ${hfErr.message}`);
+      throw toHiggsfieldHttpError(hfErr);
     }
   } catch (err) {
     next(err);
@@ -173,7 +187,7 @@ export async function upscaleController(req: Request, res: Response, next: NextF
         where: { id: aiJob.id },
         data: { status: 'FAILED', error: hfErr.message },
       });
-      throw new HttpError(500, `Higgsfield xato: ${hfErr.message}`);
+      throw toHiggsfieldHttpError(hfErr);
     }
   } catch (err) {
     next(err);

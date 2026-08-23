@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { Upload, Loader2, ImagePlus } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface UploadDropzoneProps {
   onUpload: (data: { url: string; fileKey: string }) => void;
@@ -9,8 +10,11 @@ interface UploadDropzoneProps {
 }
 
 /**
- * UploadThing bilan rasm yuklash komponenti
- * Rasmni to'g'ridan-to'g'ri UploadThing'ga yuboradi va URL ni qaytaradi
+ * Rasm yuklash komponenti
+ *
+ * Fayl API'ning /cards/upload endpointiga boradi. U yerda UPLOADTHING_TOKEN
+ * bo'lsa bulutga, bo'lmasa serverdagi uploads/ papkasiga saqlanadi — ya'ni
+ * kalitlar sozlanmagan bo'lsa ham yuklash ishlaydi.
  */
 export function UploadDropzone({ onUpload, maxFiles = 10 }: UploadDropzoneProps) {
   const [uploading, setUploading] = useState(false);
@@ -41,26 +45,18 @@ export function UploadDropzone({ onUpload, maxFiles = 10 }: UploadDropzoneProps)
           continue;
         }
 
-        // UploadThing'ga yuborish
         const formData = new FormData();
         formData.append('file', file);
 
-        const res = await fetch('/api/uploadthing', {
-          method: 'POST',
-          body: formData,
+        const { data } = await api.post('/cards/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
         });
 
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || 'Yuklashda xato');
-        }
-
-        const data = await res.json();
         onUpload({ url: data.url, fileKey: data.fileKey });
         setProgress(Math.round(((i + 1) / fileArray.length) * 100));
       }
     } catch (err: any) {
-      setError(err.message || 'Yuklashda xato');
+      setError(err.response?.data?.error || err.message || 'Yuklashda xato');
     } finally {
       setUploading(false);
       setProgress(0);
@@ -83,22 +79,22 @@ export function UploadDropzone({ onUpload, maxFiles = 10 }: UploadDropzoneProps)
           if (!uploading) handleFiles(e.dataTransfer.files);
         }}
         className={`
-          border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition
-          ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-slate-400'}
+          border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition
+          ${dragOver ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent/50'}
           ${uploading ? 'opacity-60 pointer-events-none' : ''}
         `}
       >
         {uploading ? (
           <div className="flex flex-col items-center">
-            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
-            <p className="text-sm text-slate-600">Yuklanmoqda... {progress}%</p>
+            <Loader2 className="w-8 h-8 text-accent animate-spin mb-2" />
+            <p className="text-sm text-muted">Yuklanmoqda... {progress}%</p>
           </div>
         ) : (
           <div className="flex flex-col items-center">
-            <ImagePlus className="w-10 h-10 text-slate-400 mb-2" />
+            <ImagePlus className="w-10 h-10 text-muted mb-2" />
             <p className="font-medium">Rasmlarni bu yerga tashlang</p>
-            <p className="text-sm text-slate-500 mt-1">yoki bosing va tanlang</p>
-            <p className="text-xs text-slate-400 mt-2">PNG, JPG, WEBP · max 8MB</p>
+            <p className="text-sm text-muted mt-1">yoki bosing va tanlang</p>
+            <p className="text-xs text-muted mt-2">PNG, JPG, WEBP · max 8MB</p>
           </div>
         )}
         <input

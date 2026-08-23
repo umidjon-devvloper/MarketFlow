@@ -2,7 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../utils/prisma';
 import { HttpError } from '../middleware/error.middleware';
-import { encrypt, decrypt } from '../utils/encryption';
+import { encrypt, decrypt, DecryptionError } from '../utils/encryption';
+import { inspectToken as inspectWbToken } from '../services/marketplace/wb-api.service';
 import * as uzumApi from '../services/marketplace/uzum-api.service';
 import { getAdapter, AdapterCreds, Marketplace } from '../services/marketplace/adapter';
 import { buildInsights } from '../services/marketplace/insights.service';
@@ -43,6 +44,14 @@ export async function saveCredentials(req: Request, res: Response, next: NextFun
   try {
     const data = saveCredentialsSchema.parse(req.body);
     const organizationId = req.organization!.id;
+
+    // WB tokenidagi eng ko'p uchraydigan ikki xatoni saqlashdan oldin ushlaymiz
+    if (data.marketplace === 'WB') {
+      const problems = inspectWbToken(data.apiKey);
+      if (problems.length) {
+        throw new HttpError(400, problems.map((p) => p.message).join(' '));
+      }
+    }
 
     const encryptedKey = encrypt(data.apiKey);
     const encryptedSecret = data.apiSecret ? encrypt(data.apiSecret) : null;
@@ -175,6 +184,8 @@ function pagination(req: Request) {
 /** Marketplace API xatolarini HttpError'ga o'girib, express error middleware'ga uzatish */
 function toHttpError(err: unknown): unknown {
   if (err instanceof HttpError) return err;
+  // Kalit shifridan ochilmasa — bu marketplace emas, bizning konfiguratsiya muammomiz
+  if (err instanceof DecryptionError) return new HttpError(409, err.message);
   if (err instanceof Error) {
     const status = (err as any).status;
     if (typeof status === 'number') {
@@ -230,12 +241,63 @@ export async function marketplaceOrders(req: Request, res: Response, next: NextF
   }
 }
 
-/** GET /api/marketplaces/:id/stocks?page&size */
+/**
+ * GET /api/marketplaces/:id/stocks?page&size&source=cache|live
+ *
+ * Standart — keshdan (cron to'ldiradi): darhol ochiladi va marketplace
+ * limitini sarflamaydi. Kesh bo'sh bo'lsa jonli so'rovga tushadi, shunda
+ * birinchi ochilish ham ishlaydi. `source=live` — majburan jonli.
+ */
 export async function marketplaceStocks(req: Request, res: Response, next: NextFunction) {
   try {
-    const { creds, adapter, cred } = await loadCredentials(req.params.id, req.organization!.id);
-    const data = await adapter.getStocks(creds, pagination(req));
-    res.json({ success: true, marketplace: cred.marketplace, ...data });
+    const organizationId = req.organization!.id;
+    const { page, size } = pagination(req);
+    const wantsLive = req.query.source === 'live';
+
+    const cred = await prisma.userMarketplace.findFirst({
+      where: { id: req.params.id, organizationId },
+      select: { marketplace: true, isActive: true },
+    });
+    if (!cred) throw new HttpError(404, 'Marketplace ulanish topilmadi');
+
+    if (!wantsLive) {
+      const where = { organizationId, marketplace: cred.marketplace };
+      const [rows, total, latest] = await Promise.all([
+        prisma.marketplaceStock.findMany({
+          where,
+          orderBy: [{ amount: 'asc' }, { sku: 'asc' }],
+          skip: page * size,
+          take: size,
+        }),
+        prisma.marketplaceStock.count({ where }),
+        prisma.marketplaceStock.findFirst({
+          where,
+          orderBy: { syncedAt: 'desc' },
+          select: { syncedAt: true },
+        }),
+      ]);
+
+      if (total > 0) {
+        return res.json({
+          success: true,
+          marketplace: cred.marketplace,
+          source: 'cache',
+          syncedAt: latest?.syncedAt,
+          items: rows.map((r) => ({
+            sku: r.sku,
+            name: r.name ?? undefined,
+            amount: r.amount,
+            warehouse: r.warehouse ?? undefined,
+          })),
+          total,
+        });
+      }
+      // Kesh hali to'ldirilmagan — birinchi ochilishda jonli o'qiymiz
+    }
+
+    const live = await loadCredentials(req.params.id, organizationId);
+    const data = await live.adapter.getStocks(live.creds, { page, size });
+    res.json({ success: true, marketplace: cred.marketplace, source: 'live', ...data });
   } catch (err) {
     next(toHttpError(err));
   }
