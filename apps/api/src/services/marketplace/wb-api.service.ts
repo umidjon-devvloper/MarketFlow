@@ -126,8 +126,20 @@ async function rawFetch<T>(
 
   if (!res.ok) {
     const err: any = await res.json().catch(() => ({}));
-    const message = err?.errorText || err?.detail || err?.message || res.statusText;
+    let message = err?.errorText || err?.detail || err?.message || res.statusText;
+    // "Invalid request format" da asl sabab additionalErrors ichida bo'ladi —
+    // uni qo'shmasak qaysi maydon xato ekanini bilib bo'lmaydi
+    const extra = err?.additionalErrors;
+    if (extra && typeof extra === 'object') {
+      const parts = Object.entries(extra)
+        .map(([k, val]) => `${k}: ${typeof val === 'string' ? val : JSON.stringify(val)}`)
+        .filter(Boolean);
+      if (parts.length) message += ` — ${parts.join('; ')}`;
+    } else if (Array.isArray(err?.errors) && err.errors.length) {
+      message += ` — ${err.errors.join('; ')}`;
+    }
     const wbErr = new WbApiError(`Wildberries API [${res.status}]: ${message}`, res.status);
+    (wbErr as any).additionalErrors = extra;
     if (res.status === 429) (wbErr as any).retryAfterMs = retryAfterMs(res);
     throw wbErr;
   }

@@ -3,17 +3,17 @@
  *
  * Oqim:
  *   1. Rasmni yuklab olamiz
- *   2. (ixtiyoriy) Higgsfield AI bilan fonni oq qilamiz — kalit bo'lsa
+ *   2. (ixtiyoriy) OpenAI (gpt-image-1) bilan fonni oq qilamiz — kalit bo'lsa
  *   3. sharp bilan marketplace kanvasiga joylaymiz (o'lcham, nisbat, oq fon, JPEG)
  *   4. Natijani UploadThing'ga yuklab, URL qaytaramiz
  *
- * Higgsfield ishlamasa ham 3-qadam baribir bajariladi — ya'ni rasm hech
+ * AI ishlamasa ham 3-qadam baribir bajariladi — ya'ni rasm hech
  * bo'lmaganda to'g'ri o'lcham va oq fon bilan chiqadi.
  */
 
 import sharp from 'sharp';
 import { MarketplaceSpec } from '../marketplace/specs';
-import { removeBackground, waitForJob } from '../higgsfield.service';
+import { removeBackgroundOpenAI } from './openai-bg.service';
 import { storeImage } from './storage';
 
 export interface AdaptResult {
@@ -49,23 +49,6 @@ async function downloadImage(url: string): Promise<Buffer> {
   return buffer;
 }
 
-/** Higgsfield bilan fonni oq qilishga urinish. Muvaffaqiyatsiz bo'lsa null. */
-async function tryRemoveBackground(imageUrl: string): Promise<string | null> {
-  if (!process.env.HIGGSFIELD_API_KEY) return null;
-
-  try {
-    const job = await removeBackground(imageUrl);
-    if (job.status === 'completed' && job.outputUrl) return job.outputUrl;
-    if (!job.jobId) return null;
-
-    const finished = await waitForJob(job.jobId, 45000);
-    return finished.status === 'completed' && finished.outputUrl ? finished.outputUrl : null;
-  } catch (err) {
-    console.warn('Fon oʻchirish ishlamadi:', (err as Error).message);
-    return null;
-  }
-}
-
 /**
  * Bitta rasmni marketplace spetsifikatsiyasiga moslashtirish
  */
@@ -79,7 +62,6 @@ export async function adaptImageToSpec(
   const { targetWidth, targetHeight, maxSizeMB } = spec.image;
 
   // 1. Asl rasm
-  let workingUrl = imageUrl;
   const originalBuffer = await downloadImage(imageUrl);
   const sourceMeta = await sharp(originalBuffer).metadata();
   steps.push(
@@ -92,20 +74,19 @@ export async function adaptImageToSpec(
     );
   }
 
-  // 2. AI fon
+  // 2. AI fon — OpenAI (gpt-image-1). Asl bayt ustida ishlaymiz.
   let bodyBuffer = originalBuffer;
   if (options.removeBg !== false) {
-    const cleaned = await tryRemoveBackground(workingUrl);
+    const cleaned = await removeBackgroundOpenAI(
+      originalBuffer,
+      sourceMeta.format ? `image/${sourceMeta.format}` : 'image/png',
+    );
     if (cleaned) {
-      try {
-        bodyBuffer = await downloadImage(cleaned);
-        steps.push('AI fonni oq fonga almashtirdi (Higgsfield)');
-      } catch {
-        warnings.push("AI natijasini yuklab bo'lmadi — asl rasm ishlatildi");
-      }
+      bodyBuffer = cleaned;
+      steps.push('AI fonni oq fonga almashtirdi (OpenAI gpt-image-1)');
     } else {
       warnings.push(
-        "AI fon o'chirish ishlamadi (HIGGSFIELD_API_KEY yoki servis javob bermadi) — rasm faqat o'lchamga moslandi",
+        "AI fon o'chirish ishlamadi (OpenAI javob bermadi) — rasm faqat o'lchamga moslandi",
       );
     }
   }

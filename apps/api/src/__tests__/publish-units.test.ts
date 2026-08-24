@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { __internal } from '../services/marketplace/publish.service';
 import { MARKETPLACE_SPECS, findField } from '../services/marketplace/specs';
 
-const { toApiUnits, normalizeName, vatToOzon } = __internal;
+const { toApiUnits, normalizeName, vatToOzon, wbCm } = __internal;
 
 /**
  * Nega bu testlar bor:
@@ -82,5 +82,22 @@ describe('publish — QQS formati', () => {
     expect(vatToOzon({ vat: '0%' })).toBe('0');
     // Uzum'dan ko'chirilgan 12% Ozon ro'yxatida yo'q — 0 ga tushadi
     expect(vatToOzon({ vat: '12%' })).toBe('0');
+  });
+});
+
+/**
+ * WB uzunlik/en/balandlikni BUTUN santimetrda kutadi. Jonli tekshirildi:
+ * kasr qiymat (15.5) → HTTP 400 "Invalid request format", butun (15) → 200.
+ * WB qaysi maydon ekanini aytmaydi, shuning uchun bu qoida test bilan qotiriladi.
+ */
+describe('publish — WB o\'lchami butun sm', () => {
+  it('kasr qiymat butunga yaxlitlanadi', () => {
+    expect(wbCm(15.5)).toBe(16);
+    expect(wbCm(15.4)).toBe(15);
+    expect(wbCm(30)).toBe(30);
+  });
+  it("0 yoki juda kichik → minimal 1 (WB 0 ni ham rad etadi)", () => {
+    expect(wbCm(0)).toBe(1);
+    expect(wbCm(0.4)).toBe(1);
   });
 });

@@ -109,6 +109,16 @@ function toApiUnits(
   return Math.round(value * factor * 1e6) / 1e6;
 }
 
+/**
+ * WB uzunlik/en/balandlikni BUTUN santimetrda kutadi. Kasr qiymat
+ * (masalan 155mm → 15.5sm) butun so'rovni "Invalid request format" (400)
+ * bilan rad ettiradi — WB qaysi maydon ekanini ham aytmaydi. Shuning uchun
+ * butunga yaxlitlaymiz, minimal 1 (0 ni ham WB qabul qilmaydi).
+ */
+function wbCm(value: number): number {
+  return Math.max(1, Math.round(value));
+}
+
 /** Nomlarni taqqoslash uchun — registr, "ё" va ortiqcha bo'shliqlarsiz */
 function normalizeName(text: string): string {
   return String(text || '')
@@ -437,12 +447,13 @@ async function publishWb(
           title: str(v, 'title'),
           description: str(v, 'description'),
           brand: str(v, 'brand'),
-          // WB o'lchamni sm, og'irlikni KILOGRAMM da kutadi.
+          // WB o'lchamni sm (BUTUN son), og'irlikni KILOGRAMM da kutadi.
           // Spec grammda so'raydi (shablon shunday) — o'girmasak 1000 barobar xato.
+          // Uzunlik/en/balandlik butunga yaxlitlanadi (kasr → 400), og'irlik kasr bo'la oladi.
           dimensions: {
-            length: toApiUnits(spec, v, 'packLength', 'sm'),
-            width: toApiUnits(spec, v, 'packWidth', 'sm'),
-            height: toApiUnits(spec, v, 'packHeight', 'sm'),
+            length: wbCm(toApiUnits(spec, v, 'packLength', 'sm')),
+            width: wbCm(toApiUnits(spec, v, 'packWidth', 'sm')),
+            height: wbCm(toApiUnits(spec, v, 'packHeight', 'sm')),
             weightBrutto: toApiUnits(spec, v, 'weight', 'kg'),
           },
           characteristics,
@@ -709,4 +720,4 @@ export async function checkPublishStatus(
 
 // Birlik o'girish va nom moslashtirish mantig'i testdan chaqiriladi —
 // bular jimgina noto'g'ri ishlaydigan turdagi kod
-export const __internal = { toApiUnits, normalizeName, vatToOzon, UNIT_FACTORS };
+export const __internal = { toApiUnits, normalizeName, vatToOzon, UNIT_FACTORS, wbCm };

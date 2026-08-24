@@ -3,12 +3,13 @@ import { z } from 'zod';
 import { prisma } from '../utils/prisma';
 import { HttpError } from '../middleware/error.middleware';
 import {
-  removeBackground,
   upscaleImage,
   checkJobStatus,
   waitForJob,
   HiggsfieldError,
 } from '../services/higgsfield.service';
+import { removeBackgroundOpenAI } from '../services/image/openai-bg.service';
+import { storeImage } from '../services/image/storage';
 import {
   generateListingText,
   generateAllListings,
@@ -78,50 +79,45 @@ export async function removeBackgroundController(
     });
 
     try {
-      // Higgsfield'ga yuborish
-      const hfJob = await removeBackground(image.url);
+      // Rasmni yuklab, OpenAI (gpt-image-1) bilan fonni oq qilamiz.
+      // Higgsfield API o'lik edi — shu bois sinxron OpenAI oqimiga o'tildi
+      // (job polling yo'q: natija darhol qaytadi).
+      const src = await fetch(image.url);
+      if (!src.ok) throw new Error(`Rasmni yuklab bo'lmadi (${src.status})`);
+      const inputBuffer = Buffer.from(await src.arrayBuffer());
 
-      // Provider ID saqlash
+      const cleaned = await removeBackgroundOpenAI(
+        inputBuffer,
+        src.headers.get('content-type') || 'image/png',
+      );
+      if (!cleaned) throw new Error("OpenAI fon o'chirish javob bermadi");
+
+      const stored = await storeImage(cleaned, `bg-${aiJob.id}.png`, 'image/png');
+
       await prisma.aiJob.update({
         where: { id: aiJob.id },
-        data: { providerJobId: hfJob.jobId },
+        data: { status: 'COMPLETED', outputUrl: stored.url, completedAt: new Date() },
       });
 
-      // Agar sync bo'lsa (darhol tugagan) — natijani saqlash
-      if (hfJob.status === 'completed' && hfJob.outputUrl) {
-        await prisma.aiJob.update({
-          where: { id: aiJob.id },
-          data: {
-            status: 'COMPLETED',
-            outputUrl: hfJob.outputUrl,
-            completedAt: new Date(),
-          },
-        });
-
-        // ProductImage yangi variant sifatida saqlash
-        const newImage = await prisma.productImage.create({
-          data: {
-            productId: image.productId,
-            url: hfJob.outputUrl,
-            originalUrl: image.originalUrl,
-            variant: 'UZUM', // oq fon — barcha marketplace'lar uchun mos
-            isAiProcessed: true,
-            aiJobId: aiJob.id,
-            order: image.order + 100,
-          },
-        });
-
-        return res.json({ job: { ...aiJob, status: 'COMPLETED' }, image: newImage });
-      }
-
-      // Async — job ID qaytarish
-      res.json({ job: { ...aiJob, providerJobId: hfJob.jobId } });
-    } catch (hfErr: any) {
-      await prisma.aiJob.update({
-        where: { id: aiJob.id },
-        data: { status: 'FAILED', error: hfErr.message },
+      // ProductImage yangi variant sifatida saqlash (oq fon — barchasiga mos)
+      const newImage = await prisma.productImage.create({
+        data: {
+          productId: image.productId,
+          url: stored.url,
+          originalUrl: image.originalUrl,
+          variant: 'UZUM',
+          isAiProcessed: true,
+          aiJobId: aiJob.id,
+          order: image.order + 100,
+        },
       });
-      throw toHiggsfieldHttpError(hfErr);
+
+      return res.json({ job: { ...aiJob, status: 'COMPLETED' }, image: newImage });
+    } catch (aiErr: any) {
+      await prisma.aiJob
+        .update({ where: { id: aiJob.id }, data: { status: 'FAILED', error: aiErr?.message } })
+        .catch(() => {});
+      throw new HttpError(502, `AI fon o'chirish ishlamadi: ${aiErr?.message ?? 'nomaʼlum'}`);
     }
   } catch (err) {
     next(err);
