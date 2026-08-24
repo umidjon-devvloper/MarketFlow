@@ -14,6 +14,9 @@ import {
   Minus,
   AlertTriangle,
   Link2,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
@@ -153,6 +156,16 @@ export default function CompetitorsPage() {
     onError: (err) => toast('error', errorText(err)),
   });
 
+  const setPriceMutation = useMutation({
+    mutationFn: async ({ id, price }: { id: string; price: number }) =>
+      (await api.patch(`/competitors/${id}/price`, { price })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['competitors', currentOrgId] });
+      toast('success', 'Narx saqlandi');
+    },
+    onError: (err) => toast('error', errorText(err)),
+  });
+
   const canAdd = url.trim().length > 8 && !addMutation.isPending;
 
   return (
@@ -276,6 +289,8 @@ export default function CompetitorsPage() {
               watch={w}
               checking={checkingId === w.id}
               onCheck={() => checkOneMutation.mutate(w.id)}
+              onSetPrice={(price) => setPriceMutation.mutate({ id: w.id, price })}
+              savingPrice={setPriceMutation.isPending}
               onDelete={() => {
                 if (confirm("Bu kuzatuvni o'chirasizmi?")) deleteMutation.mutate(w.id);
               }}
@@ -291,15 +306,31 @@ function WatchCard({
   watch,
   checking,
   onCheck,
+  onSetPrice,
+  savingPrice,
   onDelete,
 }: {
   watch: Watch;
   checking: boolean;
   onCheck: () => void;
+  onSetPrice: (price: number) => void;
+  savingPrice: boolean;
   onDelete: () => void;
 }) {
   const mp = MARKETPLACE_INFO[watch.marketplace];
   const title = watch.label || watch.lastTitle || 'Raqobatchi mahsuloti';
+  const currency = watch.marketplace === 'UZUM' ? 'UZS' : 'RUB';
+
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState('');
+
+  const saveManual = () => {
+    const num = Number(input.replace(/\s/g, '').replace(',', '.'));
+    if (!Number.isFinite(num) || num <= 0) return;
+    onSetPrice(num);
+    setEditing(false);
+    setInput('');
+  };
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -356,12 +387,55 @@ function WatchCard({
           {/* Raqobatchi narxi */}
           <div>
             <p className="text-xs text-gray-400">Raqobatchi narxi</p>
-            {watch.lastPrice != null ? (
-              <p className="text-lg font-semibold text-gray-900">
-                {formatPrice(watch.lastPrice, watch.lastCurrency || undefined)}
-              </p>
+            {editing ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveManual();
+                    if (e.key === 'Escape') setEditing(false);
+                  }}
+                  placeholder={`narx, ${currency}`}
+                  className="w-28 rounded-md border border-gray-300 px-2 py-1 text-sm outline-none focus:border-indigo-500"
+                />
+                <button
+                  onClick={saveManual}
+                  disabled={savingPrice}
+                  className="rounded-md bg-indigo-600 p-1.5 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  title="Saqlash"
+                >
+                  {savingPrice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100"
+                  title="Bekor qilish"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ) : (
-              <p className="text-sm text-gray-400">— o'qilmadi —</p>
+              <div className="flex items-center gap-1.5">
+                {watch.lastPrice != null ? (
+                  <p className="text-lg font-semibold text-gray-900">
+                    {formatPrice(watch.lastPrice, watch.lastCurrency || undefined)}
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-400">— o'qilmadi —</p>
+                )}
+                <button
+                  onClick={() => {
+                    setInput(watch.lastPrice != null ? String(watch.lastPrice) : '');
+                    setEditing(true);
+                  }}
+                  className="rounded p-1 text-gray-300 transition hover:bg-gray-100 hover:text-indigo-600"
+                  title="Narxni qo'lda kiritish"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </div>
             )}
           </div>
 

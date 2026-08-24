@@ -13,6 +13,7 @@ router.post('/:id/check', requireRole(...ROLES.ANY), controller.checkOne);
 
 // O'zgartirish — ADMIN/OWNER
 router.post('/', requireRole(...ROLES.ADMIN_OR_OWNER), controller.create);
+router.patch('/:id/price', requireRole(...ROLES.ADMIN_OR_OWNER), controller.setPrice);
 router.delete('/:id', requireRole(...ROLES.ADMIN_OR_OWNER), controller.remove);
 
 export default router;

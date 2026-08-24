@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../utils/prisma';
 import { HttpError } from '../middleware/error.middleware';
-import { detectMarketplace, priceVerdict } from '../services/marketplace/competitor.service';
+import { detectMarketplace, priceVerdict, appendHistory } from '../services/marketplace/competitor.service';
 import {
   checkOneWatch,
   checkOrganizationCompetitors,
@@ -120,6 +120,51 @@ export async function create(req: Request, res: Response, next: NextFunction) {
     }
 
     res.status(201).json({ success: true, id: watch.id, firstCheck });
+  } catch (err) {
+    next(err);
+  }
+}
+
+const priceSchema = z.object({
+  price: z.number().positive('Narx musbat bo\'lishi kerak').max(1e12),
+});
+
+/**
+ * PATCH /api/competitors/:id/price — narxni qo'lda kiritish.
+ *
+ * Uzum/Ozon server so'rovlarini bloklaganda avtomatik o'qish ishlamaydi.
+ * Shunda sotuvchi raqobatchi narxini o'zi ko'rib qo'lda kiritadi — tarix
+ * va taqqoslash baribir ishlaydi. Valyuta bozordan olinadi (qo'lda emas),
+ * shunda UZS/RUB adashib ketmaydi.
+ */
+export async function setPrice(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+    const { id } = req.params;
+    const { price } = priceSchema.parse(req.body);
+
+    const watch = await prisma.competitorWatch.findFirst({
+      where: { id, organizationId },
+      select: { id: true, marketplace: true, history: true },
+    });
+    if (!watch) throw new HttpError(404, 'Kuzatuv topilmadi');
+
+    const currency = currencyOf(watch.marketplace);
+    const today = new Date().toISOString().slice(0, 10);
+    const history = appendHistory(watch.history, { date: today, price });
+
+    await prisma.competitorWatch.update({
+      where: { id },
+      data: {
+        lastPrice: price,
+        lastCurrency: currency,
+        lastCheckedAt: new Date(),
+        lastError: null,
+        history,
+      },
+    });
+
+    res.json({ success: true, price, currency });
   } catch (err) {
     next(err);
   }

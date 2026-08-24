@@ -118,9 +118,21 @@ export async function fetchCompetitorPrice(url: string): Promise<CompetitorPrice
       },
     });
   } catch (err: any) {
-    throw new Error(`Sahifaga ulanib bo'lmadi: ${err?.message || 'tarmoq xatosi'}`);
+    // "fetch failed" odatda marketplace ulanishni uzib tashlagani (bot himoya).
+    // Buni "internet yo'q" deb ko'rsatmaymiz — sabab boshqa.
+    throw new Error(
+      "Marketplace avtomatik o'qishni bloklади (ulanish uzildi). " +
+        'Narxni qo\'lda kiritishingiz mumkin.',
+    );
   }
 
+  // 403/429/503 — bot himoyasi, "havola noto'g'ri" emas. Uzum/Ozon buni
+  // server so'rovlariga tez-tez qaytaradi. Halol tushuntiramiz.
+  if (res.status === 403 || res.status === 429 || res.status === 503) {
+    throw new Error(
+      `Marketplace avtomatik o'qishни bloklади (${res.status}). Narxni qo'lda kiritishingiz mumkin.`,
+    );
+  }
   if (!res.ok) {
     throw new Error(`Sahifa ochilmadi (${res.status}) — havola to'g'riligini tekshiring`);
   }

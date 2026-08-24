@@ -144,4 +144,36 @@ describe('Uzum shabloni', () => {
     const exact = Array.from({ length: max }, () => toUzumRow(baseValues, ['https://x/1.jpg']));
     expect(() => fillUzumTemplate(exact)).not.toThrow();
   });
+
+  // ─── Narx 1000 ga karrali (Uzum "Значение цены не кратно 1000" rad etadi) ───
+
+  it('narx 1000 ga karrali emas — eng yaqin mingga yaxlitlanadi (Y va Z)', () => {
+    const { buffer, warnings } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, price: 234324, oldPrice: 250500 }, ['https://a.jpg']),
+    ]);
+    const rows = readSheet(buffer);
+    expect(Number(cell(rows, 'Y', 4))).toBe(234000); // sotuv narxi
+    expect(Number(cell(rows, 'Z', 4))).toBe(251000); // chegirmagacha narx
+    expect(warnings.some((w) => w.column === 'Цена продажи (som)' && /yaxlitlandi/.test(w.message))).toBe(true);
+  });
+
+  it('allaqachon karrali narx o\'zgarmaydi va ogohlantirish bermaydi', () => {
+    const { buffer, warnings } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, price: 89000 }, ['https://a.jpg']),
+    ]);
+    expect(Number(cell(readSheet(buffer), 'Y', 4))).toBe(89000);
+    expect(warnings.some((w) => /yaxlitlandi/.test(w.message))).toBe(false);
+  });
+
+  it('1000 dan kichik narx 0 ga tushmaydi — minimal 1000', () => {
+    const { buffer } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, price: 400 }, ['https://a.jpg']),
+    ]);
+    expect(Number(cell(readSheet(buffer), 'Y', 4))).toBe(1000);
+  });
+
+  it('kategoriyani faylda tanlash haqida ogohlantirish bo\'ladi', () => {
+    const { warnings } = fillUzumTemplate([toUzumRow(baseValues, ['https://a.jpg'])]);
+    expect(warnings.some((w) => /kategoriya/i.test(w.message) && w.column.includes('Категория'))).toBe(true);
+  });
 });

@@ -171,6 +171,21 @@ export function toUzumRow(values: Record<string, any>, imageUrls: string[]): Uzu
 
 // ─── XML yordamchilari ───────────────────────────────────
 
+/**
+ * Uzum narxni faqat 1000 ga karrali qabul qiladi ("Значение цены не кратно
+ * 1000"). Shuning uchun eksportda narxni eng yaqin mingga yaxlitlaymiz.
+ * Minimal 1000 — 400 so'm mahsulot 0 ga tushib, Uzum uni rad etmasin.
+ * O'zgargan bo'lsa sotuvchini ogohlantiramiz (jimgina narxini o'zgartirmaymiz).
+ */
+function roundToThousand(raw: unknown): number | null {
+  const num = Number(String(raw).replace(/\s/g, '').replace(',', '.'));
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.max(1000, Math.round(num / 1000) * 1000);
+}
+
+/** Narx ustunlari — 1000 ga karrali bo'lishi shart */
+const PRICE_KEYS = new Set(['price', 'oldPrice']);
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -253,6 +268,19 @@ export function fillUzumTemplate(rows: UzumExportRow[]): UzumExportResult {
   let xml = Buffer.from(sheetBytes).toString('utf8');
   const warnings: UzumExportWarning[] = [];
 
+  // Uzum kategoriyani faqat shablon ichidagi ochiluvchi ro'yxatdan (makros)
+  // qabul qiladi — bizda Uzum'ning raqamli kategoriya ID si yo'q, shuning
+  // uchun E/F ustunlarini kod to'ldira olmaydi. Sotuvchini bir marta
+  // aniq ogohlantiramiz: aks holda "Название/ID категории не указано" chiqadi.
+  warnings.push({
+    row: DATA_START_ROW,
+    column: 'Категория (E/F)',
+    message:
+      "Yuklashdan oldin faylni ochib, har bir tovar uchun kategoriyani " +
+      "ochiluvchi ro'yxatdan tanlang — makros E/F ustunlarini to'ldiradi. " +
+      "Aks holda Uzum 'kategoriya ko'rsatilmagan' deb rad etadi.",
+  });
+
   rows.forEach((row, index) => {
     const rowNum = DATA_START_ROW + index;
 
@@ -302,6 +330,19 @@ export function fillUzumTemplate(rows: UzumExportRow[]): UzumExportResult {
           column: column.header,
           message: "majburiy maydon bo'sh — Uzum yuklashda rad etadi",
         });
+      }
+
+      // Narxni 1000 ga karrali qilamiz — Uzum shunisiz rad etadi
+      if (PRICE_KEYS.has(column.key!) && value !== undefined && value !== null && String(value).trim() !== '') {
+        const rounded = roundToThousand(value);
+        if (rounded !== null && rounded !== Number(value)) {
+          warnings.push({
+            row: rowNum,
+            column: column.header,
+            message: `narx ${value} → ${rounded} ga yaxlitlandi (Uzum 1000 ga karrali talab qiladi)`,
+          });
+        }
+        if (rounded !== null) value = rounded;
       }
 
       cells.push(buildCell(column.col, rowNum, value, column.type, styles.get(column.col)));
