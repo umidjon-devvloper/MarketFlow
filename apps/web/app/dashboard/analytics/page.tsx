@@ -12,7 +12,17 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
-import { TrendingUp, ShoppingCart, Package, BarChart3, RefreshCw, Loader2 } from 'lucide-react';
+import {
+  TrendingUp,
+  TrendingDown,
+  ShoppingCart,
+  Package,
+  BarChart3,
+  RefreshCw,
+  Loader2,
+  Trophy,
+  Minus,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { QueryError } from '@/components/QueryError';
@@ -20,6 +30,27 @@ import { RemoteImage } from '@/components/RemoteImage';
 import { MARKETPLACE_INFO, MarketplaceId, MARKETPLACE_IDS } from '@/components/listings/constants';
 import { formatPrice } from '@/lib/utils';
 import { pivotByDate, marketplaceTotals, TrendRow } from '@/lib/trend';
+
+interface Delta {
+  current: number;
+  previous: number;
+  changePct: number | null;
+}
+interface Growth {
+  days: number;
+  orders: Delta;
+  revenue: Record<string, Delta>;
+}
+interface TopProduct {
+  key: string;
+  sku?: string;
+  name: string;
+  marketplace: MarketplaceId;
+  currency: string;
+  qty: number;
+  revenue: number;
+  orderCount: number;
+}
 
 /** Brend ranglari — grafik chiziqlari uchun. Absolyut, ikkala temada ham ishlaydi. */
 const MP_COLOR: Record<MarketplaceId, string> = {
@@ -59,6 +90,20 @@ export default function AnalyticsPage() {
   });
 
   const rows = useMemo(() => data?.items ?? [], [data]);
+
+  const { data: growth } = useQuery({
+    queryKey: ['growth', currentOrgId, days],
+    queryFn: async () => (await api.get<Growth>('/analytics/growth', { params: { days } })).data,
+    enabled: !!currentOrgId,
+  });
+
+  const { data: topSelling } = useQuery({
+    queryKey: ['top-selling', currentOrgId, days],
+    queryFn: async () =>
+      (await api.get('/analytics/top-selling', { params: { days, limit: 10 } })).data
+        .products as TopProduct[],
+    enabled: !!currentOrgId,
+  });
 
   const totals = useMemo(() => marketplaceTotals(rows, MARKETPLACE_IDS), [rows]);
   const ordersData = useMemo(() => pivotByDate(rows, 'orders', MARKETPLACE_IDS), [rows]);
@@ -109,6 +154,25 @@ export default function AnalyticsPage() {
       </div>
 
       {isError && <QueryError error={error} onRetry={() => refetch()} className="mb-4" />}
+
+      {/* O'sish — joriy oyna oldingi teng oynaga nisbatan */}
+      {growth && (
+        <div className="glass rounded-[22px] px-5 py-4 mb-6 grid grid-cols-2 lg:grid-cols-4 gap-y-4 gap-x-4">
+          <KpiCell
+            label={`Buyurtma (${days} kun)`}
+            value={String(growth.orders.current)}
+            delta={growth.orders.changePct}
+          />
+          {Object.entries(growth.revenue).map(([cur, d]) => (
+            <KpiCell
+              key={cur}
+              label={`Daromad (${cur})`}
+              value={formatPrice(d.current, cur)}
+              delta={d.changePct}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Marketplace kesimi */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -187,9 +251,101 @@ export default function AnalyticsPage() {
               formatValue={(v) => formatPrice(v, revenueCurrency)}
             />
           </ChartCard>
+
+          {topSelling && topSelling.length > 0 && (
+            <div className="card p-5">
+              <div className="flex items-center gap-2.5 mb-4">
+                <span className="w-9 h-9 rounded-full bg-accent-soft text-accent flex items-center justify-center flex-shrink-0">
+                  <Trophy className="w-[18px] h-[18px]" />
+                </span>
+                <div>
+                  <h2 className="font-semibold leading-tight">Eng ko&apos;p sotilganlar</h2>
+                  <p className="text-xs text-muted mt-0.5">
+                    Buyurtma pozitsiyalari bo&apos;yicha (bekor qilinganlar hisobga olinmagan)
+                  </p>
+                </div>
+              </div>
+
+              <div className="divide-y">
+                {topSelling.map((t, i) => (
+                  <div key={t.key} className="py-2.5 flex items-center gap-3">
+                    <span className="w-6 text-sm font-bold text-muted tabular-nums flex-shrink-0">
+                      {i + 1}
+                    </span>
+                    <RemoteImage
+                      src={MARKETPLACE_INFO[t.marketplace]?.logo}
+                      alt=""
+                      fit="contain"
+                      sizes="24px"
+                      className="w-6 h-6 rounded-md bg-white/95 flex-shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{t.name}</p>
+                      {t.sku && <p className="text-[11px] text-muted font-mono truncate">{t.sku}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-semibold tabular-nums">{t.qty} dona</p>
+                      <p className="text-[11px] text-muted tabular-nums">
+                        {formatPrice(t.revenue, t.currency)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/** O'sish ko'rsatkichi — qiymat + oldingi davrga nisbatan foiz */
+function KpiCell({
+  label,
+  value,
+  delta,
+}: {
+  label: string;
+  value: string;
+  delta: number | null;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[0.8rem] text-muted truncate">{label}</p>
+      <div className="flex items-center gap-2 mt-1">
+        <span className="text-xl font-extrabold text-gradient leading-none">{value}</span>
+        <DeltaBadge delta={delta} />
+      </div>
+    </div>
+  );
+}
+
+function DeltaBadge({ delta }: { delta: number | null }) {
+  // Oldingi davr yo'q (null) — solishtirib bo'lmaydi, "yangi" deymiz
+  if (delta === null) {
+    return <span className="text-[11px] text-muted whitespace-nowrap">yangi</span>;
+  }
+  if (delta === 0) {
+    return (
+      <span className="text-[11px] text-muted inline-flex items-center gap-0.5">
+        <Minus className="w-3 h-3" />
+        0%
+      </span>
+    );
+  }
+  const up = delta > 0;
+  const Icon = up ? TrendingUp : TrendingDown;
+  return (
+    <span
+      className={`text-[11px] font-medium inline-flex items-center gap-0.5 whitespace-nowrap ${
+        up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+      }`}
+    >
+      <Icon className="w-3 h-3" />
+      {up ? '+' : ''}
+      {delta}%
+    </span>
   );
 }
 

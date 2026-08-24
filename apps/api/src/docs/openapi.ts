@@ -1089,6 +1089,41 @@ export const openapiSpec = {
     },
 
     // ---------- Analytics ----------
+    '/api/analytics/growth': {
+      get: {
+        tags: ['Analytics'],
+        summary: "Sotuv o'sishi — joriy oyna oldingi teng oynaga nisbatan",
+        description:
+          "Diskret buyurtmalardan (MarketplaceOrder, orderedAt bo'yicha), snapshot " +
+          "rolling yig'indisidan EMAS. Bekor qilingan buyurtmalar hisobga olinmaydi. " +
+          "Daromad valyuta bo'yicha alohida — UZS va RUB qo'shilmaydi. Oldingi davr " +
+          "0 bo'lsa foiz null.",
+        security: bearerAuth,
+        parameters: [
+          { name: 'days', in: 'query', schema: { type: 'integer', default: 30, maximum: 180 } },
+          orgHeader,
+        ],
+        responses: { 200: { description: 'orders delta va revenue (valyuta bo\'yicha) delta' } },
+      },
+    },
+    '/api/analytics/top-selling': {
+      get: {
+        tags: ['Analytics'],
+        summary: "Eng ko'p sotilgan tovarlar",
+        description:
+          "Buyurtma pozitsiyalarini tovar bo'yicha jamlaydi. Eski /top-products lokal " +
+          "Listing.sales ustuniga tayanadi (u to'ldirilmaydi); bu esa haqiqiy sotuvdan. " +
+          "Bir xil artikul turli bozorda alohida qatorda — valyuta aralashmasligi uchun.",
+        security: bearerAuth,
+        parameters: [
+          { name: 'days', in: 'query', schema: { type: 'integer', default: 30, maximum: 180 } },
+          { name: 'marketplace', in: 'query', schema: { type: 'string', enum: ['uzum', 'ozon', 'wb', 'yandex'] } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', default: 10, maximum: 50 } },
+          orgHeader,
+        ],
+        responses: { 200: { description: 'products: sku, name, marketplace, qty, revenue, currency' } },
+      },
+    },
     '/api/analytics/overview': {
       get: {
         tags: ['Analytics'],

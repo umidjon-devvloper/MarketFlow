@@ -1,4 +1,4 @@
-# 🚀 MarketFlow — To'liq loyiha (v5.1)
+# 🚀 MarketFlow — To'liq loyiha (v5.2)
 
 **Uzum, Ozon, Wildberries, Yandex Market uchun yagona mahsulot boshqaruv platformasi.**
 
@@ -86,6 +86,8 @@ marketflow/
 - Buyurtma va qoldiq to'rttala bozor bitta grafikda; daromad esa bitta valyuta
   (UZS va RUB bir o'qda ko'rsatilmaydi — RUB ko'rinmay ketardi)
 - Ma'lumot cron bilan yig'iladi, sahifa bazadan darhol o'qiydi
+- **O'sish** — joriy davr oldingi teng davrga nisbatan (foiz bilan)
+- **Eng ko'p sotilgan tovarlar** — haqiqiy buyurtma pozitsiyalaridan
 
 ### 📱 Mobile ilova (Expo)
 - iOS + Android
@@ -265,6 +267,7 @@ To'liq hujjat: **`GET /api/docs`** (Swagger UI)
 - [x] **4.9** — Buyurtmani tasdiqlash va bekor qilish
 - [x] **5.0** — Kartochka sifat bahosi (0–100)
 - [x] **5.1** — Sotuv trendi analitikasi (buyurtma/daromad/qoldiq grafiklari)
+- [x] **5.2** — O'sish ko'rsatkichi va eng ko'p sotilgan tovarlar
 
 ## 🔮 Kelajak
 

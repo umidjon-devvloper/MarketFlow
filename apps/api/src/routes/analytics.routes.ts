@@ -9,5 +9,7 @@ router.use(authMiddleware, orgMiddleware);
 router.get('/overview', controller.getOverview);
 router.get('/timeseries', controller.getTimeseries);
 router.get('/top-products', controller.getTopProducts);
+router.get('/growth', controller.getGrowth);
+router.get('/top-selling', controller.getTopSelling);
 
 export default router;
