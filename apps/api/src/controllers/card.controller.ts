@@ -132,7 +132,8 @@ export async function uploadImage(req: Request, res: Response, next: NextFunctio
 const adaptSchema = z.object({
   marketplace: z.string(),
   imageUrl: z.string().url(),
-  removeBg: z.boolean().default(true),
+  // Ko'rsatilmasa — server sozlamasi hal qiladi (AI_BG_REMOVAL, standart o'chiq)
+  removeBg: z.boolean().optional(),
 });
 
 export async function adaptImage(req: Request, res: Response, next: NextFunction) {

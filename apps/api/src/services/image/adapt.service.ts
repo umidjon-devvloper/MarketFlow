@@ -74,20 +74,22 @@ export async function adaptImageToSpec(
     );
   }
 
-  // 2. AI fon — OpenAI (gpt-image-1). Asl bayt ustida ishlaymiz.
+  // 2. AI fon — standart O'CHIQ. gpt-image-1 sekin (~20-60s) va OpenAI
+  // tashkilot tasdig'ini talab qiladi, shuning uchun avtomatik ishlamaydi.
+  // Yoqish: .env da AI_BG_REMOVAL="on", yoki so'rovda removeBg=true.
   let bodyBuffer = originalBuffer;
-  if (options.removeBg !== false) {
-    const cleaned = await removeBackgroundOpenAI(
+  const removeBg = options.removeBg ?? process.env.AI_BG_REMOVAL === 'on';
+  if (removeBg) {
+    const result = await removeBackgroundOpenAI(
       originalBuffer,
       sourceMeta.format ? `image/${sourceMeta.format}` : 'image/png',
     );
-    if (cleaned) {
-      bodyBuffer = cleaned;
+    if (result.ok) {
+      bodyBuffer = result.buffer;
       steps.push('AI fonni oq fonga almashtirdi (OpenAI gpt-image-1)');
     } else {
-      warnings.push(
-        "AI fon o'chirish ishlamadi (OpenAI javob bermadi) — rasm faqat o'lchamga moslandi",
-      );
+      // Aniq sabab bilan — "javob bermadi" o'rniga (timeout / 403 / kalit yo'q)
+      warnings.push(`AI fon o'chirish ishlamadi: ${result.error} — rasm faqat o'lchamga moslandi`);
     }
   }
 

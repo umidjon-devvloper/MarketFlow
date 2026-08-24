@@ -54,6 +54,12 @@ export async function removeBackgroundController(
   next: NextFunction,
 ) {
   try {
+    if (process.env.AI_BG_REMOVAL !== 'on') {
+      throw new HttpError(
+        409,
+        "AI fon o'chirish hozircha o'chirilgan. Yoqish uchun serverda AI_BG_REMOVAL=on qiling.",
+      );
+    }
     const { imageId } = removeBackgroundSchema.parse(req.body);
     const userId = req.user!.userId;
     const organizationId = req.organization!.id;
@@ -86,13 +92,13 @@ export async function removeBackgroundController(
       if (!src.ok) throw new Error(`Rasmni yuklab bo'lmadi (${src.status})`);
       const inputBuffer = Buffer.from(await src.arrayBuffer());
 
-      const cleaned = await removeBackgroundOpenAI(
+      const result = await removeBackgroundOpenAI(
         inputBuffer,
         src.headers.get('content-type') || 'image/png',
       );
-      if (!cleaned) throw new Error("OpenAI fon o'chirish javob bermadi");
+      if (!result.ok) throw new Error(result.error);
 
-      const stored = await storeImage(cleaned, `bg-${aiJob.id}.png`, 'image/png');
+      const stored = await storeImage(result.buffer, `bg-${aiJob.id}.png`, 'image/png');
 
       await prisma.aiJob.update({
         where: { id: aiJob.id },
