@@ -294,7 +294,11 @@ export async function syncMarketplace(
     const snapshot = {
       orders: summary?.orders ?? 0,
       revenue: new Prisma.Decimal(summary?.revenue ?? 0),
-      currency: summary?.currency ?? 'UZS',
+      // Valyuta bozorga bog'liq, summary'ga emas: WB summary limitga urilib
+      // null qaytganda ?? 'UZS' butun WB kesimini noto'g'ri UZS deb belgilardi
+      // va analitikada RUB daromad UZS bo'lib ko'rinardi. Qoldiq kesimidagi
+      // (yuqoridagi) mantiqning aynan o'zi.
+      currency: cred.marketplace === 'UZUM' ? 'UZS' : 'RUB',
       skuCount: items.length,
       totalStock: items.reduce((n, r) => n + r.amount, 0),
       lowStock: items.filter((r) => r.amount > 0 && r.amount <= lowStockThreshold).length,
