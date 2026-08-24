@@ -7,7 +7,7 @@ process.env.NEXT_IGNORE_INCORRECT_LOCKFILE = '1';
 // Bu yerda web = "host" zona: dashboard/auth/api o'zi xizmat qiladi,
 // marketing yo'llarini esa landing zonasiga proxy qiladi (Multi-Zones).
 // Lokal: landing 3001-portda. Vercel'da keyinchalik @vercel/microfrontends bilan almashtiriladi.
-const LANDING_URL = process.env.LANDING_URL || 'http://localhost:3001';
+const LANDING_URL = process.env.LANDING_URL || 'https://market-flow-landing-mu.vercel.app';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
