@@ -76,6 +76,7 @@ model Organization {
   syncRuns         SyncRun[]
   publishJobs      PublishJob[]
   orders           MarketplaceOrder[]
+  competitorWatches CompetitorWatch[]
 
   @@index([ownerId])
   @@index([slug])
@@ -176,6 +177,7 @@ model Product {
   listings    Listing[]
   aiJobs      AiJob[]
   publishJobs PublishJob[]
+  competitorWatches CompetitorWatch[]
 
   // SKU butun tizim bo'ylab emas, tashkilot ichida unikal bo'lishi kerak —
   // aks holda boshqa sotuvchi band qilgan artikulni ishlata olmaysiz
@@ -605,4 +607,53 @@ model MarketplaceOrder {
   @@unique([organizationId, marketplace, externalId])
   @@index([organizationId, orderedAt])
   @@index([organizationId, marketplace])
+}
+
+// ============================================
+// RAQOBATCHI NARX KUZATUVI
+// ============================================
+
+/// Sotuvchi kuzatmoqchi bo'lgan raqobatchi tovarning ochiq havolasi.
+///
+/// Nega havolani sotuvchi kiritadi: "hamma raqobatchini avtomatik topish"
+/// ishonchli emas — bir xil tovarni turli sotuvchi turli nom bilan qo'yadi.
+/// Sotuvchi esa aynan qaysi listing bilan raqobatlashishini biladi. Biz
+/// o'sha ochiq sahifani davriy o'qib, narx tarixini yuritamiz.
+///
+/// VALYUTA: raqobatchi narxi o'z bozori valyutasida (uzum.uz — UZS,
+/// wildberries.ru — RUB). O'zining narxi bilan solishtirish faqat valyuta
+/// mos kelganda qilinadi — aks holda "arzon/qimmat" degan xulosa yanglish.
+model CompetitorWatch {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Ixtiyoriy: o'zining qaysi mahsuloti bilan solishtirish
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  marketplace Marketplace
+  url         String
+  /// Sotuvchi bergan nom (ro'yxatda ko'rinadi)
+  label       String?
+
+  /// Oxirgi o'qilgan narx va valyuta
+  lastPrice    Decimal? @db.Decimal(15, 2)
+  lastCurrency String?
+  /// Sahifadan olingan nom (tekshiruv uchun)
+  lastTitle    String?
+  /// Oxirgi tekshiruv vaqti va natijasi
+  lastCheckedAt DateTime?
+  lastError     String?
+
+  /// Narx tarixi: [{ date, price }] — oxirgi 60 nuqta saqlanadi
+  history Json @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Bir havola bir tashkilotda bir marta kuzatiladi
+  @@unique([organizationId, url])
+  @@index([organizationId])
+  @@index([lastCheckedAt])
 }

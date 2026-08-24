@@ -23,12 +23,14 @@ import cardRoutes from './routes/card.routes'; // ← YANGI 4.3: marketplace kar
 import alertsRoutes from './routes/alerts.routes'; // ← YANGI: qoldiq xabarnomasi
 import syncRoutes from './routes/sync.routes'; // ← YANGI: marketplace sinxronizatsiyasi
 import orderRoutes from './routes/order.routes'; // ← YANGI: buyurtmalar
+import competitorRoutes from './routes/competitor.routes'; // ← YANGI: raqobatchi narx kuzatuvi
 
 import { errorHandler } from './middleware/error.middleware';
 import { isPlaceholderKey } from './utils/encryption';
 import { startStockAlertJob } from './jobs/stock-alerts.job';
 import { startMarketplaceSyncJob } from './jobs/marketplace-sync.job';
 import { startPublishQueueJob } from './jobs/publish-queue.job';
+import { startCompetitorWatchJob } from './jobs/competitor-watch.job';
 import { warmupDatabase } from './utils/prisma';
 
 const app = express();
@@ -91,6 +93,7 @@ app.use('/api/cards', cardRoutes); // ← YANGI 4.3
 app.use('/api/alerts', alertsRoutes); // ← YANGI: qoldiq xabarnomasi
 app.use('/api/sync', syncRoutes); // ← YANGI: sinxronizatsiya
 app.use('/api/orders', orderRoutes); // ← YANGI: buyurtmalar
+app.use('/api/competitors', competitorRoutes); // ← YANGI: raqobatchi narx kuzatuvi
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Not Found', path: req.path });
@@ -114,6 +117,7 @@ void warmupDatabase();
 startMarketplaceSyncJob();
 startStockAlertJob();
 startPublishQueueJob();
+startCompetitorWatchJob();
 
 app.listen(PORT, () => {
   console.log(`🚀 MarketFlow API v4.3 (Marketplace kartochkalari) ishga tushdi: http://localhost:${PORT}`);

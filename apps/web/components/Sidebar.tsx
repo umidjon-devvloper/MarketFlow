@@ -13,6 +13,7 @@ import {
   Settings,
   LogOut,
   Store,
+  Tag,
   Users,
   Sparkles,
   ChevronRight,
@@ -49,6 +50,7 @@ const SECTIONS: NavSection[] = [
       { href: '/dashboard/orders', label: 'Buyurtmalar', icon: ShoppingCart },
       { href: '/dashboard/analytics', label: 'Tahlil', icon: BarChart3 },
       { href: '/dashboard/marketplaces', label: "Marketplace'lar", icon: Store },
+      { href: '/dashboard/competitors', label: 'Raqobatchilar', icon: Tag },
     ],
   },
   {
