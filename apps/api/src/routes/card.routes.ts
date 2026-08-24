@@ -33,6 +33,9 @@ router.get('/:productId/publish-status/:marketplace', controller.publishStatus);
 // Bir nechta kartochkaga bitta kategoriyani birdan qo'yish
 router.post('/bulk-category', requireRole(...ROLES.ANY), controller.bulkCategory);
 
+// Kartochka sifat bahosi (jonli, saqlashdan oldin)
+router.post('/quality', controller.cardQuality);
+
 // Narx va qoldiqni marketplace'ga yuborish (orqaga sinxronlash)
 router.post('/sync-price-stock', requireRole(...ROLES.ANY), controller.syncPriceStock);
 

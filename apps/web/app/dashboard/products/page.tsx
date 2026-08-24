@@ -31,6 +31,7 @@ import { formatPrice, formatDate } from '@/lib/utils';
 import { SkeletonRows, SkeletonCards } from '@/components/Skeleton';
 import { RemoteImage } from '@/components/RemoteImage';
 import { PublishQueuePanel } from '@/components/publish/PublishQueuePanel';
+import { QualityPill, QualityScore } from '@/components/quality/QualityBadge';
 import { NotReadyPanel, SkippedProduct } from '@/components/publish/NotReadyPanel';
 import { BulkCategoryDialog } from '@/components/publish/BulkCategoryDialog';
 import { PriceStockDialog } from '@/components/publish/PriceStockDialog';
@@ -62,6 +63,7 @@ interface Product {
   images: Array<{ id: string; url: string; isPrimary: boolean }>;
   listings: Array<{ marketplace: MarketplaceId; status: string }>;
   updatedAt: string;
+  quality?: (QualityScore & { marketplace: MarketplaceId }) | null;
 }
 
 const statusColors = {
@@ -475,6 +477,12 @@ export default function ProductsPage() {
                     <p className="font-semibold">{formatPrice(product.basePrice, product.currency)}</p>
                     <p className="text-xs text-muted mt-1">{formatDate(product.updatedAt)}</p>
                   </div>
+
+                  {product.quality && (
+                    <div className="hidden md:block flex-shrink-0">
+                      <QualityPill quality={product.quality} />
+                    </div>
+                  )}
 
                   <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[product.status]}`}>
                     {statusLabels[product.status]}

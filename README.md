@@ -1,4 +1,4 @@
-# 🚀 MarketFlow — To'liq loyiha (v4.9)
+# 🚀 MarketFlow — To'liq loyiha (v5.0)
 
 **Uzum, Ozon, Wildberries, Yandex Market uchun yagona mahsulot boshqaruv platformasi.**
 
@@ -73,6 +73,12 @@ marketflow/
 
   Tugmalar server javobiga qarab chiziladi — imkoniyat yo'q joyda tugma
   ko'rsatilmaydi va sababi aytiladi
+
+### ⭐ Kartochka sifat bahosi
+- Har kartochkaga 0–100 ball: rasm soni, nom, tavsif, majburiy va qo'shimcha
+  xususiyatlar bo'yicha (marketplace'lar ham xuddi shunga qarab reyting beradi)
+- Ro'yxatda halqa ko'rsatkichi, sehrgarda omillar taqsimoti va maslahatlar
+- Jonli hisoblanadi — saqlashdan oldin ko'rinadi
 
 ### 📊 Analytics
 - Recharts bilan grafiklar
@@ -193,6 +199,7 @@ cd apps/mobile && npm start      # Expo QR
 - `GET /api/cards/categories/:marketplace?q=` — kategoriya katalogidan qidirish
 - `POST /api/cards/:productId/publish/:marketplace` — API orqali joylash
 - `GET /api/cards/:productId/publish-status/:marketplace` — natijani tekshirish
+- `POST /api/cards/quality` — kartochka sifat bahosi (jonli)
 - `POST /api/cards/sync-price-stock` — narx/qoldiqni yuborish (`dryRun` bilan oldindan ko'rish)
 - `POST /api/cards/bulk-category` — bir nechta kartochkaga bitta kategoriya
 - `POST /api/cards/publish-batch` — ommaviy joylash navbatiga qo'shish
@@ -254,10 +261,10 @@ To'liq hujjat: **`GET /api/docs`** (Swagger UI)
 - [x] **4.7** — Narx va qoldiqni orqaga yuborish, ommaviy kategoriya tanlash
 - [x] **4.8** — Buyurtmalar bo'limi (4 bozor bitta ro'yxatda, keshdan)
 - [x] **4.9** — Buyurtmani tasdiqlash va bekor qilish
+- [x] **5.0** — Kartochka sifat bahosi (0–100)
 
 ## 🔮 Kelajak
 
-- [ ] Kartochka sifat bahosi (0–100)
 - [ ] Barcode scanner (mobile)
 - [ ] Real deploy (Vercel + Neon)
 

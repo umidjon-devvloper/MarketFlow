@@ -57,6 +57,7 @@ import {
   suspiciousPrice,
   PriceStockItem,
 } from '../services/marketplace/price-stock.service';
+import { scoreCard } from '../services/marketplace/quality.service';
 import { decrypt } from '../utils/encryption';
 import {
   buildMarketplaceWorkbook,
@@ -538,11 +539,11 @@ export async function listCards(req: Request, res: Response, next: NextFunction)
       where.listings = { some: { marketplace: query.marketplace.toUpperCase() } };
     }
 
-    const [items, total] = await Promise.all([
+    const [rawItems, total] = await Promise.all([
       prisma.product.findMany({
         where,
         include: {
-          images: { orderBy: { order: 'asc' }, take: 1 },
+          images: { orderBy: { order: 'asc' } },
           listings: { select: { marketplace: true, status: true } },
         },
         orderBy: { updatedAt: 'desc' },
@@ -551,6 +552,19 @@ export async function listCards(req: Request, res: Response, next: NextFunction)
       }),
       prisma.product.count({ where }),
     ]);
+
+    // Har kartochkaga sifat bahosini qo'shamiz. Baho kartochka qaysi
+    // marketplace uchun saqlangan bo'lsa, o'sha talab bo'yicha hisoblanadi.
+    const items = rawItems.map((product) => {
+      const attrs = (product.attributes as any) || {};
+      const mp = attrs.marketplace ? getSpec(attrs.marketplace) : null;
+      const values: Record<string, any> = attrs.values || {};
+      const quality = mp
+        ? { marketplace: mp.id, ...scoreCard(mp, values, product.images.length) }
+        : null;
+      // Ro'yxatda faqat birinchi rasm kerak — qolganini yubormaymiz
+      return { ...product, images: product.images.slice(0, 1), quality };
+    });
 
     res.json({
       items,
@@ -1171,5 +1185,33 @@ export async function syncPriceStock(req: Request, res: Response, next: NextFunc
       return next(new HttpError(err.status === 429 ? 429 : 502, err.message));
     }
     next(new HttpError(502, err?.message || "Yuborib bo'lmadi"));
+  }
+}
+
+// ============================================
+// Kartochka sifat bahosi
+// ============================================
+
+const qualitySchema = z.object({
+  marketplace: z.string(),
+  values: z.record(z.string(), z.any()).default({}),
+  imageCount: z.coerce.number().int().min(0).default(0),
+});
+
+/**
+ * POST /api/cards/quality
+ *
+ * Jonli baho — sehrgar saqlashdan oldin ko'rsatadi. Bazaga tegmaydi, shuning
+ * uchun har tahrirda chaqirsa bo'ladi.
+ */
+export async function cardQuality(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = qualitySchema.parse(req.body);
+    const spec = getSpec(body.marketplace.toUpperCase());
+    if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
+    res.json(scoreCard(spec, body.values, body.imageCount));
+  } catch (err: any) {
+    if (err?.name === 'ZodError' || err instanceof HttpError) return next(err);
+    next(new HttpError(400, err?.message || "Bahoni hisoblab bo'lmadi"));
   }
 }

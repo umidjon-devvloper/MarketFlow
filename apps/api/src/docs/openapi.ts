@@ -296,6 +296,35 @@ export const openapiSpec = {
       },
     },
 
+    '/api/cards/quality': {
+      post: {
+        tags: ['Cards'],
+        summary: 'Kartochka sifat bahosi (0–100)',
+        description:
+          "Marketplace'lar kartochkani to'ldirilganligi bo'yicha baholaydi (WB " +
+          "\"рейтинг заполненности\", Ozon \"контент-рейтинг\") va bu qidiruvdagi " +
+          "o'ringa ta'sir qiladi. Baho rasm soni, nom, tavsif, majburiy va qo'shimcha " +
+          "xususiyatlar bo'yicha hisoblanadi. Jonli — bazaga tegmaydi, sehrgar saqlashdan " +
+          "oldin ko'rsatadi. Yashirin maydonlar (kategoriya ID) bahoga kirmaydi.",
+        security: bearerAuth,
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  marketplace: { type: 'string', enum: ['uzum', 'ozon', 'wb', 'yandex'] },
+                  values: { type: 'object' },
+                  imageCount: { type: 'integer', minimum: 0 },
+                },
+                required: ['marketplace'],
+              },
+            },
+          },
+        },
+        responses: { 200: { description: 'score, grade, factors, topSuggestion' } },
+      },
+    },
     '/api/cards/sync-price-stock': {
       post: {
         tags: ['Cards'],

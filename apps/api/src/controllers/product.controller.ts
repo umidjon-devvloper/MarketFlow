@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../utils/prisma';
 import { HttpError } from '../middleware/error.middleware';
+import { getSpec } from '../services/marketplace/specs';
+import { scoreCard } from '../services/marketplace/quality.service';
 
 const createProductSchema = z.object({
   title: z.string().min(3).max(200),
@@ -53,12 +55,14 @@ export async function listProducts(req: Request, res: Response, next: NextFuncti
     if (query.status) where.status = query.status;
     if (query.category) where.category = query.category;
 
-    const [items, total] = await Promise.all([
+    const [rawItems, total] = await Promise.all([
       prisma.product.findMany({
         where,
         include: {
           images: { orderBy: { order: 'asc' }, take: 1 },
           listings: { select: { marketplace: true, status: true } },
+          // Baho uchun rasmlarning UMUMIY soni kerak (ko'rsatishga bittasi yetadi)
+          _count: { select: { images: true } },
         },
         orderBy: { updatedAt: 'desc' },
         skip: (query.page - 1) * query.limit,
@@ -66,6 +70,18 @@ export async function listProducts(req: Request, res: Response, next: NextFuncti
       }),
       prisma.product.count({ where }),
     ]);
+
+    // Har kartochkaga sifat bahosi — u qaysi marketplace uchun saqlangan
+    // bo'lsa, o'sha talab bo'yicha. Marketplace konteksti yo'q eski
+    // kartochkalarda baho null bo'ladi.
+    const items = rawItems.map(({ _count, ...product }) => {
+      const attrs = (product.attributes as any) || {};
+      const spec = attrs.marketplace ? getSpec(attrs.marketplace) : null;
+      const quality = spec
+        ? { marketplace: spec.id, ...scoreCard(spec, attrs.values || {}, _count.images) }
+        : null;
+      return { ...product, quality };
+    });
 
     res.json({
       items,

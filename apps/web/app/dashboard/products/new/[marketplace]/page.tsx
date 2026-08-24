@@ -22,6 +22,7 @@ import { api } from '@/lib/api';
 import { UploadDropzone } from '@/components/UploadDropzone';
 import { CategoryPicker, CategoryOption } from '@/components/CategoryPicker';
 import { RemoteImage } from '@/components/RemoteImage';
+import { QualityPanel, QualityScore } from '@/components/quality/QualityBadge';
 import { useToast } from '@/components/Toast';
 import { SkeletonPage } from '@/components/Skeleton';
 import {
@@ -129,6 +130,15 @@ const STEPS = [
   { key: 'export', label: 'Excel' },
 ];
 
+/** Query kalitida ishlatiladigan barqaror snapshot — bo'sh maydonlar hisobga olinmaydi */
+function filledCountKey(values: Record<string, string>): string {
+  return Object.entries(values)
+    .filter(([, v]) => (v ?? '').toString().trim())
+    .map(([k, v]) => `${k}:${String(v).length}`)
+    .sort()
+    .join('|');
+}
+
 export default function NewCardPage() {
   const params = useParams<{ marketplace: string }>();
   const searchParams = useSearchParams();
@@ -194,6 +204,23 @@ export default function NewCardPage() {
   }, [prefill, prefillApplied]);
 
   const allFields = useMemo(() => spec?.groups.flatMap((g) => g.fields) ?? [], [spec]);
+
+  // Jonli sifat bahosi — faqat yakun qadamida so'raladi (bazaga tegmaydi).
+  // Maydonlar shu qadamda o'zgarmaydi, shuning uchun har harfda emas.
+  const { data: quality } = useQuery({
+    queryKey: ['card-quality', spec?.id, step, filledCountKey(values), images.length],
+    queryFn: async () =>
+      (
+        await api.post('/cards/quality', {
+          marketplace: spec!.id,
+          values,
+          imageCount: images.length,
+        })
+      ).data as QualityScore,
+    enabled: step === 3 && !!spec,
+    staleTime: 10_000,
+  });
+
 
   // Eksport uchun rasm ro'yxati: moslashtirilgani bo'lsa o'sha, bo'lmasa asl
   const exportImageUrls = images.map((img) => img.adapted?.url || img.url);
@@ -827,6 +854,8 @@ export default function NewCardPage() {
                 </button>
               </div>
             )}
+
+            {quality && <QualityPanel quality={quality} />}
 
             <div className="card p-6">
               <h2 className="font-semibold mb-3">Excel'da nima bo'ladi</h2>
