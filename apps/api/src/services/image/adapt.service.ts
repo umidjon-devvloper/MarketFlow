@@ -13,7 +13,7 @@
 
 import sharp from 'sharp';
 import { MarketplaceSpec } from '../marketplace/specs';
-import { removeBackgroundOpenAI } from './openai-bg.service';
+import { removeBackgroundRemoveBg, bgRemovalEnabled } from './remove-bg.service';
 import { storeImage } from './storage';
 
 export interface AdaptResult {
@@ -74,22 +74,21 @@ export async function adaptImageToSpec(
     );
   }
 
-  // 2. AI fon — standart O'CHIQ. gpt-image-1 sekin (~20-60s) va OpenAI
-  // tashkilot tasdig'ini talab qiladi, shuning uchun avtomatik ishlamaydi.
-  // Yoqish: .env da AI_BG_REMOVAL="on", yoki so'rovda removeBg=true.
+  // 2. Fon o'chirish — remove.bg (maxsus xizmat, mahsulotni saqlaydi, tez).
+  // REMOVE_BG_API_KEY bo'lsa avtomatik yoqiladi (AI_BG_REMOVAL bilan majburlash mumkin).
   let bodyBuffer = originalBuffer;
-  const removeBg = options.removeBg ?? process.env.AI_BG_REMOVAL === 'on';
+  const removeBg = options.removeBg ?? bgRemovalEnabled();
   if (removeBg) {
-    const result = await removeBackgroundOpenAI(
+    const result = await removeBackgroundRemoveBg(
       originalBuffer,
       sourceMeta.format ? `image/${sourceMeta.format}` : 'image/png',
     );
     if (result.ok) {
       bodyBuffer = result.buffer;
-      steps.push('AI fonni oq fonga almashtirdi (OpenAI gpt-image-1)');
+      steps.push('Fonni oq fonga almashtirdi (remove.bg)');
     } else {
-      // Aniq sabab bilan — "javob bermadi" o'rniga (timeout / 403 / kalit yo'q)
-      warnings.push(`AI fon o'chirish ishlamadi: ${result.error} — rasm faqat o'lchamga moslandi`);
+      // Aniq sabab bilan (kalit yo'q / kredit tugagan / timeout)
+      warnings.push(`Fon o'chirish ishlamadi: ${result.error} — rasm faqat o'lchamga moslandi`);
     }
   }
 

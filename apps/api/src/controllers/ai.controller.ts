@@ -8,7 +8,7 @@ import {
   waitForJob,
   HiggsfieldError,
 } from '../services/higgsfield.service';
-import { removeBackgroundOpenAI } from '../services/image/openai-bg.service';
+import { removeBackgroundRemoveBg, bgRemovalEnabled } from '../services/image/remove-bg.service';
 import { storeImage } from '../services/image/storage';
 import {
   generateListingText,
@@ -54,10 +54,10 @@ export async function removeBackgroundController(
   next: NextFunction,
 ) {
   try {
-    if (process.env.AI_BG_REMOVAL !== 'on') {
+    if (!bgRemovalEnabled()) {
       throw new HttpError(
         409,
-        "AI fon o'chirish hozircha o'chirilgan. Yoqish uchun serverda AI_BG_REMOVAL=on qiling.",
+        "Fon o'chirish o'chirilgan. Serverda REMOVE_BG_API_KEY ni to'ldiring (yoki AI_BG_REMOVAL=on).",
       );
     }
     const { imageId } = removeBackgroundSchema.parse(req.body);
@@ -85,14 +85,13 @@ export async function removeBackgroundController(
     });
 
     try {
-      // Rasmni yuklab, OpenAI (gpt-image-1) bilan fonni oq qilamiz.
-      // Higgsfield API o'lik edi — shu bois sinxron OpenAI oqimiga o'tildi
-      // (job polling yo'q: natija darhol qaytadi).
+      // Rasmni yuklab, remove.bg bilan fonni oq qilamiz (sinxron — natija
+      // darhol qaytadi, mahsulot qayta chizilmaydi, aynan saqlanadi).
       const src = await fetch(image.url);
       if (!src.ok) throw new Error(`Rasmni yuklab bo'lmadi (${src.status})`);
       const inputBuffer = Buffer.from(await src.arrayBuffer());
 
-      const result = await removeBackgroundOpenAI(
+      const result = await removeBackgroundRemoveBg(
         inputBuffer,
         src.headers.get('content-type') || 'image/png',
       );
