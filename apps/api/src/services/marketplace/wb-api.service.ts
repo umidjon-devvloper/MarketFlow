@@ -149,7 +149,7 @@ async function rawFetch<T>(
 async function wbFetch<T>(
   apiKey: string,
   url: string,
-  options: { method?: string; body?: unknown; bucket: Bucket },
+  options: { method?: string; body?: unknown; bucket: Bucket; noCache?: boolean },
 ): Promise<T> {
   const { bucket } = options;
   const id = tokenId(apiKey);
@@ -160,7 +160,11 @@ async function wbFetch<T>(
       gapMs: MIN_GAP_MS[bucket],
       globalKey: `wb:${id}|*`,
       globalGapMs: GLOBAL_GAP_MS,
-      cacheKey: `wb:${id}|${options.method || 'GET'}|${url}|${JSON.stringify(options.body ?? null)}`,
+      // noCache — kesh butunlay chetlab o'tiladi (publish tekshiruvida yangi
+      // ma'lumot kerak; 60s kesh eski holatni qaytarardi)
+      cacheKey: options.noCache
+        ? undefined
+        : `wb:${id}|${options.method || 'GET'}|${url}|${JSON.stringify(options.body ?? null)}`,
       cacheTtlMs: CACHE_TTL_MS[bucket],
       maxWaitMs: MAX_WAIT_MS,
       retries: MAX_RETRIES,
@@ -499,11 +503,15 @@ export async function saveMedia(
  * WB kartochkani asinxron yaratadi: HTTP 200 "qabul qilindi" degani,
  * "yaratildi" degani emas. Haqiqiy natija shu yerda ko'rinadi.
  */
-export async function getCardErrors(apiKey: string, locale = 'ru'): Promise<any[]> {
+export async function getCardErrors(
+  apiKey: string,
+  locale = 'ru',
+  opts: { fresh?: boolean } = {},
+): Promise<any[]> {
   const data = await wbFetch<any>(
     apiKey,
     `${WB_CONTENT}/content/v2/cards/error/list?locale=${locale}`,
-    { bucket: 'cards' },
+    { bucket: 'cards', noCache: opts.fresh },
   );
   return Array.isArray(data?.data) ? data.data : [];
 }

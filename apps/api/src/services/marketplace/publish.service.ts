@@ -396,6 +396,35 @@ async function buildWbCharacteristics(
   return out;
 }
 
+/**
+ * WB asinxron: cards/upload 200 = "qabul qilindi", "yaratildi" EMAS. Tez rad
+ * etishlarni (format/validatsiya) darrov ushlaymiz — sotuvchi "yuborildi" deb
+ * qolib, keyin kartochka yo'qligini ko'rib chalkashmasin. Sekin rad etishlar
+ * keyin checkPublishStatus (finalizeWbCard) da chiqadi.
+ *
+ * Bir necha marta qisqa kutib, KESHSIZ xato ro'yxatini tekshiramiz.
+ * Rad etilgan bo'lsa sababni, aks holda null (hali qayta ishlanmoqda) qaytaradi.
+ */
+async function verifyWbUpload(apiKey: string, vendorCode: string): Promise<string | null> {
+  const attempts = Number(process.env.WB_VERIFY_ATTEMPTS) || 2;
+  const gapMs = Number(process.env.WB_VERIFY_GAP_MS) || 5000;
+  for (let i = 0; i < attempts; i++) {
+    await new Promise((r) => setTimeout(r, gapMs));
+    // Yaratilgan bo'lsa — rad etilmagan, tekshiruvni to'xtatamiz
+    const card = await wb.findCardByVendorCode(apiKey, vendorCode).catch(() => null);
+    if (card?.nmID) return null;
+    // Keshsiz xato ro'yxati: shu vendorCode bormi
+    const errors = await wb.getCardErrors(apiKey, 'ru', { fresh: true }).catch(() => [] as any[]);
+    const mine = errors.find((e: any) => e?.vendorCode === vendorCode || e?.object === vendorCode);
+    if (mine) {
+      return Array.isArray(mine.errors)
+        ? mine.errors.join('; ')
+        : String(mine.errors ?? "sabab ko'rsatilmagan");
+    }
+  }
+  return null;
+}
+
 async function publishWb(
   spec: MarketplaceSpec,
   creds: PublishCreds,
@@ -491,6 +520,18 @@ async function publishWb(
     };
   }
 
+  // 200 "qabul qilindi" — endi WB haqiqatan yaratdimi yoki jimgina rad etdimi
+  // tekshiramiz (aks holda "yuborildi" deb qolib, kartochka yo'q bo'lardi).
+  const rejection = await verifyWbUpload(creds.apiKey, vendorCode);
+  if (rejection) {
+    return {
+      success: false,
+      message: `Wildberries kartochkani rad etdi: ${rejection}`,
+      warnings,
+      raw,
+    };
+  }
+
   return {
     success: true,
     pending: true,
@@ -498,8 +539,8 @@ async function publishWb(
     // nmID esa kartochka sinxronlangandan keyin (30 daqiqagacha) paydo bo'ladi.
     taskId: vendorCode,
     message:
-      "Wildberries'ga yuborildi. Kartochka sinxronlanishi 30 daqiqagacha davom etadi — " +
-      'shundan keyin rasmlar avtomatik biriktiriladi.',
+      "Wildberries qabul qildi. Kartochka sinxronlanishi 30 daqiqagacha davom etadi. " +
+      "Holatni \"Tekshirish\" tugmasi bilan ko'rishingiz mumkin — rad etilsa sababi chiqadi.",
     warnings,
     raw,
   };
@@ -519,9 +560,9 @@ export async function finalizeWbCard(
   const card = await wb.findCardByVendorCode(apiKey, vendorCode);
 
   if (!card?.nmID) {
-    // Xato ro'yxatida bo'lsa — sababi shu yerda
-    const errors = await wb.getCardErrors(apiKey).catch(() => [] as any[]);
-    const mine = errors.find((e: any) => e?.vendorCode === vendorCode);
+    // Xato ro'yxatida bo'lsa — sababi shu yerda (keshsiz, eng yangi holat)
+    const errors = await wb.getCardErrors(apiKey, 'ru', { fresh: true }).catch(() => [] as any[]);
+    const mine = errors.find((e: any) => e?.vendorCode === vendorCode || e?.object === vendorCode);
     if (mine) {
       const text = Array.isArray(mine.errors) ? mine.errors.join('; ') : String(mine.errors ?? '');
       return { success: false, message: `Wildberries kartochkani rad etdi: ${text}`, raw: mine };
