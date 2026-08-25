@@ -87,6 +87,11 @@ export function CategoryPicker({
   const errorText =
     (queryError as any)?.response?.data?.error || (queryError as Error)?.message;
 
+  // Nom bor, lekin katalog ID si yo'q — bu asosiy mahsulotdan ko'chirilgan
+  // matn, HALI katalogdan tanlanmagan. Ko'rinishi "to'ldirilgan"dek, aslida
+  // joylashda rad etiladi. Shuni aniq ko'rsatamiz.
+  const needsCatalogSelect = !!value && !categoryId;
+
   const choose = (option: CategoryOption) => {
     onSelect(option);
     setOpen(false);
@@ -126,12 +131,26 @@ export function CategoryPicker({
             setOpen(true);
             setTimeout(() => inputRef.current?.focus(), 0);
           }}
-          className={`${inputClass} flex items-center justify-between gap-2`}
+          className={`${inputClass} flex items-center justify-between gap-2 ${
+            needsCatalogSelect ? 'border-amber-500/70' : ''
+          }`}
         >
-          <span className={value ? '' : 'text-muted'}>
+          <span
+            className={
+              needsCatalogSelect
+                ? 'text-amber-700 dark:text-amber-400'
+                : value
+                  ? ''
+                  : 'text-muted'
+            }
+          >
             {value || 'Katalogdan tanlang...'}
           </span>
-          <ChevronDown className="w-4 h-4 text-muted flex-shrink-0 absolute right-3" />
+          {needsCatalogSelect ? (
+            <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 absolute right-3" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-muted flex-shrink-0 absolute right-3" />
+          )}
         </button>
       ) : (
         <div className="relative">
@@ -167,6 +186,17 @@ export function CategoryPicker({
           >
             <X className="w-3 h-3" />
           </button>
+        </p>
+      )}
+
+      {/* Nom bor, ID yo'q — "to'ldirilgandek" ko'rinadi, lekin joylanmaydi */}
+      {needsCatalogSelect && !open && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1.5">
+          <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+          <span>
+            «{value}» faqat matn — hali katalogdan tanlanmagan. Bosib, ro&apos;yxatdan tanlang
+            (ID shundan olinadi), aks holda joylab bo&apos;lmaydi.
+          </span>
         </p>
       )}
 
