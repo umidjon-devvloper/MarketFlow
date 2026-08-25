@@ -70,6 +70,7 @@ import {
   uzumFileName,
   uzumMaxRows,
 } from '../services/export/uzum-template.service';
+import { fillWbTemplate, toWbRow, wbFileName } from '../services/export/wb-template.service';
 
 // ============================================
 // Spetsifikatsiyalar
@@ -755,6 +756,22 @@ export async function exportExcel(req: Request, res: Response, next: NextFunctio
         'Access-Control-Expose-Headers',
         'Content-Disposition, X-Export-Warnings',
       );
+      return res.send(buffer);
+    }
+
+    // Wildberries'да ham o'z Excel shabloni bor (3636 ustun, "Загрузить из файла"
+    // aynan shu strukturани kutadi). Uzum'дагидек tayyorini to'ldiramiz —
+    // hozircha "Игрушки" (o'yinchoqlar) shabloni.
+    if (spec.id === 'WB') {
+      const { buffer, warnings } = fillWbTemplate(
+        rows.map((row) => toWbRow(row.values, row.imageUrls)),
+      );
+      const fileName = wbFileName(rows.length);
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.setHeader('X-Export-Warnings', encodeURIComponent(JSON.stringify(warnings.slice(0, 50))));
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Export-Warnings');
       return res.send(buffer);
     }
 
