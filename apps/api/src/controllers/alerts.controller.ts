@@ -5,11 +5,16 @@ import { HttpError } from '../middleware/error.middleware';
 import { isMailConfigured, sendMail, verifyMail } from '../services/mail/mailer';
 import { lowStockEmail } from '../services/mail/templates';
 import { checkOrganization } from '../services/mail/low-stock.service';
+import { isTelegramConfigured, sendTelegram } from '../services/telegram/telegram.service';
 
 const settingsSchema = z.object({
   stockAlertsEnabled: z.boolean().optional(),
   lowStockThreshold: z.number().int().min(0).max(10_000).optional(),
   stockAlertEmails: z.array(z.string().email('Email manzil noto\'g\'ri')).max(10).optional(),
+  telegramAlertsEnabled: z.boolean().optional(),
+  telegramChatId: z.string().trim().max(64).optional(),
+  stopListEnabled: z.boolean().optional(),
+  stopLimit: z.number().int().min(0).max(10_000).optional(),
 });
 
 /** GET /api/alerts/settings */
@@ -22,6 +27,10 @@ export async function getSettings(req: Request, res: Response, next: NextFunctio
         stockAlertsEnabled: true,
         lowStockThreshold: true,
         stockAlertEmails: true,
+        telegramAlertsEnabled: true,
+        telegramChatId: true,
+        stopListEnabled: true,
+        stopLimit: true,
         owner: { select: { email: true } },
       },
     });
@@ -36,11 +45,17 @@ export async function getSettings(req: Request, res: Response, next: NextFunctio
       stockAlertsEnabled: org.stockAlertsEnabled,
       lowStockThreshold: org.lowStockThreshold,
       stockAlertEmails: org.stockAlertEmails,
+      telegramAlertsEnabled: org.telegramAlertsEnabled,
+      telegramChatId: org.telegramChatId,
+      stopListEnabled: org.stopListEnabled,
+      stopLimit: org.stopLimit,
       /// Sozlamada manzil bo'lmasa xat shu yerga ketadi
       defaultRecipient: org.owner.email,
       /// Serverda Gmail sozlanganmi — UI shunga qarab ogohlantiradi
       mailConfigured: isMailConfigured(),
       mailError: mail.ok ? undefined : mail.error,
+      /// Serverda Telegram boti sozlanganmi
+      telegramConfigured: isTelegramConfigured(),
       /// Hozir "kam qoldi" holatida turgan mahsulotlar soni
       activeAlerts: pending,
     });
@@ -65,8 +80,20 @@ export async function updateSettings(req: Request, res: Response, next: NextFunc
             ...new Set(data.stockAlertEmails.map((e) => e.trim().toLowerCase()).filter(Boolean)),
           ],
         }),
+        ...(data.telegramAlertsEnabled !== undefined && { telegramAlertsEnabled: data.telegramAlertsEnabled }),
+        ...(data.telegramChatId !== undefined && { telegramChatId: data.telegramChatId || null }),
+        ...(data.stopListEnabled !== undefined && { stopListEnabled: data.stopListEnabled }),
+        ...(data.stopLimit !== undefined && { stopLimit: data.stopLimit }),
       },
-      select: { stockAlertsEnabled: true, lowStockThreshold: true, stockAlertEmails: true },
+      select: {
+        stockAlertsEnabled: true,
+        lowStockThreshold: true,
+        stockAlertEmails: true,
+        telegramAlertsEnabled: true,
+        telegramChatId: true,
+        stopListEnabled: true,
+        stopLimit: true,
+      },
     });
 
     // Chegara o'zgarsa eski yozuvlar ma'nosini yo'qotadi — tozalab, keyingi
@@ -119,6 +146,35 @@ export async function sendTestEmail(req: Request, res: Response, next: NextFunct
   }
 }
 
+/** POST /api/alerts/telegram-test — Telegram sinov xabari */
+export async function sendTestTelegram(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true, telegramChatId: true },
+    });
+    if (!org) throw new HttpError(404, 'Tashkilot topilmadi');
+    if (!org.telegramChatId) {
+      throw new HttpError(409, 'Avval Telegram chat ID sini kiriting va saqlang');
+    }
+
+    const result = await sendTelegram(
+      org.telegramChatId,
+      `✅ <b>MarketFlow</b> — Telegram ulanishi ishlayapti.\n${org.name} uchun kam qoldiq xabarlari shu yerga keladi.`,
+    );
+    if (!result.ok) {
+      throw new HttpError(
+        result.error?.includes('TELEGRAM_BOT_TOKEN') ? 409 : 502,
+        result.error || 'Telegram xabari yuborilmadi',
+      );
+    }
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** POST /api/alerts/run — qoldiqni hozir tekshirish */
 export async function runNow(req: Request, res: Response, next: NextFunction) {
   try {
@@ -131,6 +187,10 @@ export async function runNow(req: Request, res: Response, next: NextFunction) {
       recipients: report.recipients,
       emailSent: report.emailSent,
       emailError: report.emailError,
+      telegramSent: report.telegramSent,
+      telegramError: report.telegramError,
+      stoppedCount: report.stopped.length,
+      stopped: report.stopped,
       errors: report.errors,
     });
   } catch (err) {

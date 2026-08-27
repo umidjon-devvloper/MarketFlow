@@ -16,8 +16,10 @@ import { Marketplace as PrismaMarketplace } from '@prisma/client';
 import { prisma } from '../../utils/prisma';
 import { decrypt } from '../../utils/encryption';
 import { getAdapter, AdapterCreds } from '../marketplace/adapter';
+import { pushPriceStock } from '../marketplace/price-stock.service';
 import { sendMail } from './mailer';
 import { lowStockEmail, LowStockRow } from './templates';
+import { sendTelegram, lowStockTelegramText } from '../telegram/telegram.service';
 
 /** Qoldiq hamon kam bo'lsa, eslatma shu vaqtdan keyin takrorlanadi */
 const REMIND_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -36,6 +38,11 @@ export interface LowStockReport {
   recipients: string[];
   emailSent: boolean;
   emailError?: string;
+  /** Telegram ham yoqilgan bo'lsa */
+  telegramSent?: boolean;
+  telegramError?: string;
+  /** Stop-list: savdodan olingan (qoldiq 0 ga tushirilgan) qatorlar */
+  stopped: LowStockRow[];
   /** Ulanishlardan biri o'qilmasa — sabab shu yerda, lekin jarayon to'xtamaydi */
   errors: Array<{ marketplace: string; error: string }>;
 }
@@ -136,6 +143,10 @@ export async function checkOrganization(
       stockAlertsEnabled: true,
       lowStockThreshold: true,
       stockAlertEmails: true,
+      telegramAlertsEnabled: true,
+      telegramChatId: true,
+      stopListEnabled: true,
+      stopLimit: true,
       userMarketplaces: {
         where: { isActive: true },
         select: { id: true, marketplace: true, apiKey: true, apiSecret: true, shopId: true },
@@ -153,21 +164,52 @@ export async function checkOrganization(
     notified: [],
     recipients: [],
     emailSent: false,
+    stopped: [],
     errors: [],
   };
 
+  // Stop-list uchun ochilgan kalitni saqlab boramiz (qayta shifr ochmaslik uchun)
+  const credByMp = new Map<string, { apiKey: string; apiSecret: string | null; shopId: string | null }>();
+
   for (const cred of org.userMarketplaces) {
     try {
-      const { rows } = await readStocks(organizationId, cred.marketplace, {
+      const dec = {
         apiKey: decrypt(cred.apiKey),
         apiSecret: cred.apiSecret ? decrypt(cred.apiSecret) : null,
         shopId: cred.shopId,
-      });
+      };
+      credByMp.set(cred.marketplace, dec);
+      const { rows } = await readStocks(organizationId, cred.marketplace, dec);
       const grouped = groupBySku(cred.marketplace, rows);
       report.checked += grouped.length;
       report.low.push(...grouped.filter((r) => r.amount <= threshold));
     } catch (err: any) {
       report.errors.push({ marketplace: cred.marketplace, error: err?.message || 'xato' });
+    }
+  }
+
+  // ── Stop-list: chegaradan pastdagilarni savdodan olamiz (qoldiq → 0) ──
+  if (org.stopListEnabled) {
+    const stopItems = report.low.filter((r) => r.amount <= org.stopLimit);
+    const byMp = new Map<string, typeof stopItems>();
+    for (const r of stopItems) {
+      const list = byMp.get(r.marketplace) || [];
+      list.push(r);
+      byMp.set(r.marketplace, list);
+    }
+    for (const [marketplace, items] of byMp) {
+      const creds = credByMp.get(marketplace);
+      if (!creds) continue;
+      try {
+        await pushPriceStock(
+          marketplace as PrismaMarketplace,
+          creds,
+          items.map((r) => ({ productId: '', title: r.name || r.sku, sku: r.sku, stock: 0 })),
+        );
+        report.stopped.push(...items);
+      } catch (err: any) {
+        report.errors.push({ marketplace, error: `stop-list: ${err?.message || 'xato'}` });
+      }
     }
   }
 
@@ -191,24 +233,40 @@ export async function checkOrganization(
 
   report.recipients = await recipientsFor(organizationId, org.stockAlertEmails);
 
-  if (!org.stockAlertsEnabled) return report;
+  // ── Email ──
+  if (org.stockAlertsEnabled) {
+    const { subject, html } = lowStockEmail({
+      orgName: org.name,
+      threshold,
+      rows: report.notified,
+      dashboardUrl: process.env.WEB_APP_URL
+        ? `${process.env.WEB_APP_URL.replace(/\/$/, '')}/dashboard/marketplaces`
+        : undefined,
+    });
+    const result = await sendMail({ to: report.recipients, subject, html });
+    report.emailSent = result.sent;
+    if (!result.sent) report.emailError = result.reason === 'error' ? result.error : result.reason;
+  }
 
-  const { subject, html } = lowStockEmail({
-    orgName: org.name,
-    threshold,
-    rows: report.notified,
-    dashboardUrl: process.env.WEB_APP_URL
-      ? `${process.env.WEB_APP_URL.replace(/\/$/, '')}/dashboard/marketplaces`
-      : undefined,
-  });
+  // ── Telegram (email'dan mustaqil) ──
+  if (org.telegramAlertsEnabled && org.telegramChatId) {
+    const tg = await sendTelegram(
+      org.telegramChatId,
+      lowStockTelegramText({
+        orgName: org.name,
+        threshold,
+        rows: report.notified,
+        stopped: report.stopped,
+      }),
+    );
+    report.telegramSent = tg.ok;
+    if (!tg.ok) report.telegramError = tg.error;
+  }
 
-  const result = await sendMail({ to: report.recipients, subject, html });
-  report.emailSent = result.sent;
-  if (!result.sent) report.emailError = result.reason === 'error' ? result.error : result.reason;
-
-  // Yozuvni faqat xat haqiqatan ketgandan keyin yangilaymiz — aks holda
-  // SMTP xatosi "ogohlantirildi" deb qayd etilib, xabar butunlay yo'qoladi
-  if (result.sent) {
+  // Yozuvni faqat biror kanal ishlagach (yoki savdodan olingach) yangilaymiz —
+  // aks holda xato "ogohlantirildi" deb qayd etilib, xabar yo'qoladi
+  const anyDelivered = report.emailSent || report.telegramSent || report.stopped.length > 0;
+  if (anyDelivered) {
     await Promise.all(
       report.notified.map((row) =>
         prisma.stockAlert.upsert({
@@ -252,7 +310,16 @@ export async function checkOrganization(
 /** Barcha faol tashkilotlarni ketma-ket tekshirish (cron uchun) */
 export async function checkAllOrganizations(): Promise<LowStockReport[]> {
   const orgs = await prisma.organization.findMany({
-    where: { isActive: true, stockAlertsEnabled: true, userMarketplaces: { some: { isActive: true } } },
+    where: {
+      isActive: true,
+      userMarketplaces: { some: { isActive: true } },
+      // Email, Telegram yoki stop-list — kamida bittasi yoqilgan
+      OR: [
+        { stockAlertsEnabled: true },
+        { telegramAlertsEnabled: true },
+        { stopListEnabled: true },
+      ],
+    },
     select: { id: true },
   });
 

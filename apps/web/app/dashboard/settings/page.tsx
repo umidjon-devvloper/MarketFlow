@@ -11,6 +11,8 @@ import {
   X,
   RefreshCw,
   Send,
+  MessageCircle,
+  Ban,
   PackageX,
   RefreshCcw,
   CheckCircle2,
@@ -25,6 +27,11 @@ interface AlertSettings {
   stockAlertsEnabled: boolean;
   lowStockThreshold: number;
   stockAlertEmails: string[];
+  telegramAlertsEnabled: boolean;
+  telegramChatId: string | null;
+  telegramConfigured: boolean;
+  stopListEnabled: boolean;
+  stopLimit: number;
   defaultRecipient: string;
   mailConfigured: boolean;
   mailError?: string;
@@ -73,6 +80,11 @@ export default function SettingsPage() {
   const [emails, setEmails] = useState<string[]>([]);
   const [draftEmail, setDraftEmail] = useState('');
   const [report, setReport] = useState<RunReport | null>(null);
+  // Telegram + stop-list
+  const [tgEnabled, setTgEnabled] = useState(false);
+  const [tgChatId, setTgChatId] = useState('');
+  const [stopEnabled, setStopEnabled] = useState(false);
+  const [stopLimit, setStopLimit] = useState(0);
 
   const settingsQuery = useQuery({
     queryKey: ['alert-settings', currentOrgId],
@@ -88,6 +100,10 @@ export default function SettingsPage() {
     setEnabled(data.stockAlertsEnabled);
     setThreshold(data.lowStockThreshold);
     setEmails(data.stockAlertEmails);
+    setTgEnabled(data.telegramAlertsEnabled);
+    setTgChatId(data.telegramChatId ?? '');
+    setStopEnabled(data.stopListEnabled);
+    setStopLimit(data.stopLimit);
   }, [data]);
 
   const save = useMutation({
@@ -103,6 +119,12 @@ export default function SettingsPage() {
   const testMail = useMutation({
     mutationFn: async () => (await api.post('/alerts/test')).data,
     onSuccess: (res) => toast('success', `Sinov xati yuborildi: ${res.recipients.join(', ')}`),
+    onError: (err) => toast('error', errorText(err)),
+  });
+
+  const testTelegram = useMutation({
+    mutationFn: async () => (await api.post('/alerts/telegram-test')).data,
+    onSuccess: () => toast('success', 'Telegram sinov xabari yuborildi'),
     onError: (err) => toast('error', errorText(err)),
   });
 
@@ -293,6 +315,137 @@ export default function SettingsPage() {
                   Qo'shish
                 </button>
               </div>
+            </div>
+
+            {/* ── Telegram ── */}
+            <div className="pt-6 border-t space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                  <MessageCircle className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-sm">Telegram xabarnomasi</h3>
+                  <p className="text-xs text-muted mt-0.5">
+                    Kam qoldiq xabari Telegram kanalingizga ham keladi
+                  </p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={tgEnabled}
+                  aria-label="Telegram xabarnomasini yoqish"
+                  onClick={() => {
+                    setTgEnabled(!tgEnabled);
+                    save.mutate({ telegramAlertsEnabled: !tgEnabled });
+                  }}
+                  disabled={busy}
+                  className={`relative w-11 h-6 rounded-full transition flex-shrink-0 disabled:opacity-50 ${
+                    tgEnabled ? 'bg-accent' : 'bg-panel border'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                      tgEnabled ? 'left-[22px]' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {data && !data.telegramConfigured && (
+                <div className="flex gap-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-900 dark:text-amber-200">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>
+                    Serverda bot sozlanmagan — API <code className="px-1 rounded bg-amber-100 dark:bg-amber-900/40">.env</code>{' '}
+                    ga <code className="px-1 rounded bg-amber-100 dark:bg-amber-900/40">TELEGRAM_BOT_TOKEN</code> qo'shing (@BotFather).
+                  </span>
+                </div>
+              )}
+
+              {tgEnabled && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-xs font-medium mb-1 text-muted">Chat / kanal ID</label>
+                    <input
+                      value={tgChatId}
+                      onChange={(e) => setTgChatId(e.target.value)}
+                      onBlur={() => {
+                        if (tgChatId !== (data?.telegramChatId ?? '')) save.mutate({ telegramChatId: tgChatId });
+                      }}
+                      placeholder="masalan -1001234567890"
+                      className="w-full px-3 py-2 border rounded-lg bg-paper text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={() => testTelegram.mutate()}
+                    disabled={testTelegram.isPending || !tgChatId}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 border rounded-lg text-sm hover:bg-panel disabled:opacity-50"
+                  >
+                    {testTelegram.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Sinov
+                  </button>
+                </div>
+              )}
+              <p className="text-xs text-muted">
+                Botni kanalingizga admin qilib qo'shing, so'ng chat/kanal ID sini kiriting.
+              </p>
+            </div>
+
+            {/* ── Stop-list ── */}
+            <div className="pt-6 border-t space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400">
+                  <Ban className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-sm">Stop-list — avtomatik savdodan olish</h3>
+                  <p className="text-xs text-muted mt-0.5">
+                    Qoldiq chegaradan pastga tushса mahsulot avtomatik savdodan olinadi (qoldiq 0)
+                  </p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={stopEnabled}
+                  aria-label="Stop-list yoqish"
+                  onClick={() => {
+                    setStopEnabled(!stopEnabled);
+                    save.mutate({ stopListEnabled: !stopEnabled });
+                  }}
+                  disabled={busy}
+                  className={`relative w-11 h-6 rounded-full transition flex-shrink-0 disabled:opacity-50 ${
+                    stopEnabled ? 'bg-accent' : 'bg-panel border'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                      stopEnabled ? 'left-[22px]' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {stopEnabled && (
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-muted">Stop chegarasi</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={0}
+                      value={stopLimit}
+                      onChange={(e) => setStopLimit(Math.max(0, Number(e.target.value)))}
+                      onBlur={() => {
+                        if (stopLimit !== data?.stopLimit) save.mutate({ stopLimit });
+                      }}
+                      className="w-24 px-3 py-2 border rounded-lg bg-paper text-sm"
+                    />
+                    <span className="text-xs text-muted">donadan kam qolса savdodan olinadi</span>
+                  </div>
+                  <div className="flex gap-2.5 p-3 mt-3 rounded-lg bg-red-500/10 border border-red-500/25 text-xs text-red-800 dark:text-red-300">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>
+                      Diqqat: bu marketplace'да qoldiqni 0 qiladi — mahsulot sotuvdan chiqadi. Qoldiq to'lса qaytadan qo'yishingiz kerak.
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Amallar */}

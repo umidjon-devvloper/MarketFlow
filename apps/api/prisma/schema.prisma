@@ -65,6 +65,18 @@ model Organization {
   /// Qo'shimcha qabul qiluvchilar. Bo'sh bo'lsa — tashkilot egasining emaili
   stockAlertEmails   String[] @default([])
 
+  // ── Telegram xabarnomasi ──
+  /// Qoldiq kamayganda Telegram'ga ham yuborilsinmi
+  telegramAlertsEnabled Boolean @default(false)
+  /// Telegram chat/kanal ID (bot shu yerga yozadi)
+  telegramChatId        String?
+
+  // ── Stop-list (avtomatik savdodan olish) ──
+  /// Qoldiq stopLimit'дан pastга tushса mahsulotni avtomatik savdodan olish
+  stopListEnabled    Boolean @default(false)
+  /// Shu sondan kam qolса qoldiq 0 ga tushiriladi (savdodan olinadi)
+  stopLimit          Int     @default(0)
+
   members          Membership[]
   invitations      Invitation[]
   products         Product[]
