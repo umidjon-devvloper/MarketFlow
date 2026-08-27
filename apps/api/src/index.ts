@@ -31,6 +31,7 @@ import { startStockAlertJob } from './jobs/stock-alerts.job';
 import { startMarketplaceSyncJob } from './jobs/marketplace-sync.job';
 import { startPublishQueueJob } from './jobs/publish-queue.job';
 import { startCompetitorWatchJob } from './jobs/competitor-watch.job';
+import { startWbFinalizeJob } from './jobs/wb-finalize.job';
 import { warmupDatabase } from './utils/prisma';
 
 const app = express();
@@ -43,7 +44,7 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads'), { maxAge: '7d' }));
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN?.split(',') || 'http://localhost:3000',
+    origin: process.env.CORS_ORIGIN?.split(',') || 'https://market-flow-web-two.vercel.app',
     credentials: true,
     exposedHeaders: ['X-Organization-Id'],
   }),
@@ -118,6 +119,7 @@ startMarketplaceSyncJob();
 startStockAlertJob();
 startPublishQueueJob();
 startCompetitorWatchJob();
+startWbFinalizeJob();
 
 app.listen(PORT, () => {
   console.log(`🚀 MarketFlow API v4.3 (Marketplace kartochkalari) ishga tushdi: http://localhost:${PORT}`);
