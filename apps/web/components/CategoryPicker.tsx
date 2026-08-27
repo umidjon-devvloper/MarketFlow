@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Loader2, Check, ChevronDown, AlertTriangle, X } from 'lucide-react';
 import { api } from '@/lib/api';
+import { WB_CATEGORY_PRESET } from '@/components/listings/wbCategoryPreset';
 
 export interface CategoryOption {
   id: string;
@@ -72,7 +73,8 @@ export function CategoryPicker({
           params: { q: debounced || undefined, limit: 40 },
         })
       ).data.items as CategoryOption[],
-    enabled: open,
+    // WB'da bo'sh qidiruvda preset ko'rsatamiz — ortiqcha so'rov qilmaymiz
+    enabled: open && (marketplace.toLowerCase() !== 'wb' || !!debounced),
     staleTime: 10 * 60 * 1000,
     retry: false,
   });
@@ -214,6 +216,9 @@ export function CategoryPicker({
                 </p>
               </div>
             </div>
+          ) : !debounced && marketplace.toLowerCase() === 'wb' ? (
+            // Qidiruv bo'sh — sotuvchining odatiy kategoriyalari (1-rasm)
+            <CategoryPreset onPick={setQuery} />
           ) : isFetching && !options.length ? (
             <div className="p-6 flex justify-center">
               <Loader2 className="w-5 h-5 animate-spin text-muted" />
@@ -253,6 +258,40 @@ export function CategoryPicker({
           Nom qo'lda yozilgan — Excel uchun yetarli, API orqali joylash uchun katalogdan tanlang
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * "Mening kategoriyalarim" — sotuvchining odatiy kategoriya ro'yxati (1-rasm).
+ * Qidiruv bo'sh bo'lganda ko'rinadi; biror turni bosганда qidiruv shu atama
+ * bilan to'ladi va WB katalogidan aniq predmet tanlanadi.
+ */
+function CategoryPreset({ onPick }: { onPick: (term: string) => void }) {
+  return (
+    <div className="p-2">
+      <p className="px-2 pt-1 pb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        Mening kategoriyalarim
+      </p>
+      <div className="space-y-2.5">
+        {WB_CATEGORY_PRESET.map((group) => (
+          <div key={group.label}>
+            <p className="px-2 text-xs font-medium text-muted mb-1">{group.label}</p>
+            <div className="flex flex-wrap gap-1.5 px-1">
+              {group.items.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => onPick(item)}
+                  className="rounded-full border border-line bg-paper/60 px-2.5 py-1 text-xs transition hover:border-accent/50 hover:bg-accent-soft"
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
