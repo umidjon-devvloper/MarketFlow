@@ -385,7 +385,37 @@ async function buildWbCharacteristics(
     out.push({ id: charc.charcID, value: isNumber ? Number(text) || 0 : [text] });
   }
 
+  // Dinamik xarakteristikalar — formaда kategoriyaga qarab to'ldirilgan
+  // (charcID → qiymat). Fixed maydon yuborganini takrorlamaymiz.
   const sent = new Set(out.map((c) => c.id));
+  const dynamic = values.wbCharacteristics;
+  if (dynamic && typeof dynamic === 'object') {
+    const byId = new Map<number, any>(catalog.map((c: any) => [c.charcID, c]));
+    for (const [idStr, raw] of Object.entries(dynamic as Record<string, unknown>)) {
+      const id = Number(idStr);
+      if (!Number.isFinite(id) || sent.has(id)) continue;
+      const charc = byId.get(id);
+      if (!charc) continue;
+      if (charc.charcType === 4) {
+        const n = Number(String(raw).replace(',', '.'));
+        if (Number.isFinite(n) && n > 0) {
+          out.push({ id, value: n });
+          sent.add(id);
+        }
+      } else {
+        const arr = Array.isArray(raw) ? raw : String(raw ?? '').split(',');
+        const clean = arr
+          .map((s) => String(s).trim())
+          .filter(Boolean)
+          .slice(0, Number(charc.maxCount) || 1);
+        if (clean.length) {
+          out.push({ id, value: clean });
+          sent.add(id);
+        }
+      }
+    }
+  }
+
   const missing = catalog
     .filter((c: any) => c?.required && !sent.has(c.charcID))
     .map((c: any) => c.name);

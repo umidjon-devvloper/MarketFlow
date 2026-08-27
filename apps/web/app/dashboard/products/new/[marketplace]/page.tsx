@@ -21,6 +21,7 @@ import {
 import { api } from '@/lib/api';
 import { UploadDropzone } from '@/components/UploadDropzone';
 import { CategoryPicker, CategoryOption } from '@/components/CategoryPicker';
+import { WbCharcFields, CharcField } from '@/components/listings/WbCharcFields';
 import { RemoteImage } from '@/components/RemoteImage';
 import { QualityPanel, QualityScore } from '@/components/quality/QualityBadge';
 import { useToast } from '@/components/Toast';
@@ -152,6 +153,8 @@ export default function NewCardPage() {
   const [step, setStep] = useState(0);
   const [images, setImages] = useState<WizardImage[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
+  // Kategoriyaga mos dinamik xarakteristikalar — charcID → qiymat
+  const [wbCharcs, setWbCharcs] = useState<Record<string, string>>({});
   const [aiFilling, setAiFilling] = useState(false);
   const [aiNotes, setAiNotes] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -176,11 +179,31 @@ export default function NewCardPage() {
     enabled: !!fromProductId && !!marketplace,
   });
 
+  // Kategoriya tanlanganda WB'ning aynan o'sha predmeti xarakteristikalari
+  const subjectId = values.categoryId;
+  const { data: charcData, isFetching: charcsLoading } = useQuery({
+    queryKey: ['card-charcs', marketplace, subjectId],
+    queryFn: async () =>
+      (
+        await api.get(`/cards/categories/${marketplace}/charcs`, {
+          params: { subjectId },
+        })
+      ).data as { charcs: CharcField[] },
+    enabled: spec?.id === 'WB' && !!subjectId,
+    staleTime: 30 * 60 * 1000,
+  });
+  const charcFields: CharcField[] = charcData?.charcs || [];
+
   // Tayyor qiymatlar va rasmlarni bir marta joylashtiramiz
   useEffect(() => {
     if (!prefill || prefillApplied) return;
 
     setValues((prev) => ({ ...prefill.values, ...prev }));
+    // Oldin saqlangan dinamik xarakteristikalar (charcID → qiymat) bo'lsa yuklaymiz
+    const savedCharcs = (prefill.values as Record<string, unknown>)?.wbCharacteristics;
+    if (savedCharcs && typeof savedCharcs === 'object') {
+      setWbCharcs(savedCharcs as Record<string, string>);
+    }
     setImages(
       prefill.images.adapted.length
         ? prefill.images.adapted.map((i) => ({
@@ -278,6 +301,8 @@ export default function NewCardPage() {
       categoryId: option?.id ?? '',
       typeId: option?.typeId ?? '',
     }));
+    // Yangi kategoriya — eski kategoriyaning xarakteristikalari tozalanadi
+    setWbCharcs({});
   };
 
   const handleUpload = (uploaded: { url: string; fileKey: string }) => {
@@ -382,7 +407,8 @@ export default function NewCardPage() {
     try {
       const payload = {
         marketplace: spec.id,
-        values,
+        // Kategoriyaga mos dinamik xarakteristikalarni ham qo'shamiz
+        values: Object.keys(wbCharcs).length ? { ...values, wbCharacteristics: wbCharcs } : values,
         images: images.map((img) => ({
           url: img.adapted?.url || img.url,
           fileKey: img.adapted?.fileKey || img.fileKey,
@@ -796,6 +822,18 @@ export default function NewCardPage() {
               </div>
             </div>
           ))}
+
+          {/* Kategoriyaga mos dinamik xarakteristikalar (WB) */}
+          {spec.id === 'WB' && values.categoryId && (charcFields.length > 0 || charcsLoading) && (
+            <div className="card p-6">
+              <WbCharcFields
+                charcs={charcFields}
+                values={wbCharcs}
+                loading={charcsLoading}
+                onChange={(id, v) => setWbCharcs((prev) => ({ ...prev, [String(id)]: v }))}
+              />
+            </div>
+          )}
         </div>
       )}
 

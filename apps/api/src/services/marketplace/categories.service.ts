@@ -380,6 +380,75 @@ export async function searchCategories(
 }
 
 /** Testlar uchun: keshni tozalash */
+// ─── WB KATEGORIYA XARAKTERISTIKALARI (dinamik maydonlar) ───────────
+
+export interface CharcField {
+  /** WB charcID — publish'da shu bilan yuboriladi */
+  id: number;
+  name: string;
+  /** 'number' → son (birlik bilan), 'string' → matn/ro'yxat */
+  type: 'number' | 'string';
+  required: boolean;
+  /** Son birligi: см, г, л, шт. */
+  unit?: string;
+  /** Nechta qiymat: 0/1 — bitta, >1 — bir nechta */
+  maxCount: number;
+  /** WB " commonly used" deb belgilagan — formaда oldinroq ko'rsatiladi */
+  popular: boolean;
+}
+
+/**
+ * Formaда alohida qat'iy maydon bilan qoplangan xarakteristikalar — dinamik
+ * bo'limda takrorlanmasligi uchun chiqarib tashlanadi (specs.ts WB maydonlari:
+ * brand, color, composition, country, gender, season, contents, tnved +
+ * paket габарит/вес top-level yuboriladi).
+ */
+const WB_COVERED_CHARCS = new Set([
+  'бренд',
+  'цвет',
+  'состав',
+  'страна производства',
+  'пол',
+  'сезон',
+  'комплектация',
+  'тнвэд',
+  'тн вэд',
+  'высота упаковки',
+  'ширина упаковки',
+  'длина упаковки',
+  'вес товара с упаковкой',
+  'вес товара без упаковки',
+]);
+
+/**
+ * Kategoriya (subjectID) uchun WB xarakteristikalari — dinamik forma uchun.
+ * Qat'iy maydonlar bilan qoplanganlarини chiqarib tashlaydi, muhimlarini
+ * (required → popular) oldinga qo'yadi.
+ */
+export async function getWbCharacteristics(apiKey: string, subjectId: number): Promise<CharcField[]> {
+  const raw = await wb.getSubjectCharcs(apiKey, subjectId);
+  const out: CharcField[] = [];
+  for (const c of raw) {
+    if (WB_COVERED_CHARCS.has(normalize(String(c?.name || '')))) continue;
+    out.push({
+      id: c.charcID,
+      name: c.name,
+      type: c.charcType === 4 ? 'number' : 'string',
+      required: !!c.required,
+      unit: c.unitName || undefined,
+      maxCount: Number(c.maxCount) || 1,
+      popular: !!c.popular,
+    });
+  }
+  out.sort(
+    (a, b) =>
+      Number(b.required) - Number(a.required) ||
+      Number(b.popular) - Number(a.popular) ||
+      a.name.localeCompare(b.name, 'ru'),
+  );
+  return out;
+}
+
 export function clearCategoryCache(): void {
   treeCache.clear();
   inFlight.clear();

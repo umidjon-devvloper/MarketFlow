@@ -23,6 +23,7 @@ router.get('/ai-usage', controller.aiUsage);
 
 // Kategoriya katalogi — marketplace ID'larini qidirish
 router.get('/categories/:marketplace', controller.listCategories);
+router.get('/categories/:marketplace/charcs', controller.getCategoryCharcs);
 
 // Mavjud mahsulotni boshqa marketplace uchun qayta ishlatish
 router.get('/:productId/prefill/:marketplace', controller.prefillCard);

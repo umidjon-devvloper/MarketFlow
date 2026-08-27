@@ -41,6 +41,7 @@ import {
 } from '../services/marketplace/publish.service';
 import {
   searchCategories,
+  getWbCharacteristics,
   CategoryError,
 } from '../services/marketplace/categories.service';
 import {
@@ -843,6 +844,44 @@ export async function listCategories(req: Request, res: Response, next: NextFunc
     if (err instanceof CategoryError) return next(new HttpError(err.status, err.message));
     if (err?.name === 'DecryptionError') return next(new HttpError(409, err.message));
     // Marketplace o'z xatosini bersa (limit, ruxsat yo'q) — o'z holicha uzatamiz
+    if (typeof err?.status === 'number') {
+      return next(new HttpError(err.status === 429 ? 429 : 502, err.message));
+    }
+    next(err);
+  }
+}
+
+/**
+ * GET /api/cards/categories/:marketplace/charcs?subjectId=
+ * Tanlangan kategoriya (subjectID) uchun dinamik xarakteristikalar — forma
+ * shu kategoriyaga mos maydonlarni chizsin.
+ */
+export async function getCategoryCharcs(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+    const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
+    if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
+    if (spec.id !== 'WB') {
+      // Hozircha faqat WB; Ozon/Yandex keyingi bosqichда
+      return res.json({ marketplace: spec.id, charcs: [] });
+    }
+
+    const subjectId = Number(req.query.subjectId);
+    if (!Number.isFinite(subjectId) || subjectId <= 0) {
+      throw new HttpError(400, 'subjectId noto\'g\'ri');
+    }
+
+    const cred = await prisma.userMarketplace.findFirst({
+      where: { organizationId, marketplace: spec.id as any, isActive: true },
+    });
+    if (!cred) {
+      throw new HttpError(400, `${spec.name} ulanmagan — Marketplace'lar bo'limida API kalitni kiriting.`);
+    }
+
+    const charcs = await getWbCharacteristics(decrypt(cred.apiKey), subjectId);
+    res.json({ marketplace: spec.id, subjectId, charcs });
+  } catch (err: any) {
+    if (err?.name === 'DecryptionError') return next(new HttpError(409, err.message));
     if (typeof err?.status === 'number') {
       return next(new HttpError(err.status === 429 ? 429 : 502, err.message));
     }
