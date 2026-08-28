@@ -82,7 +82,8 @@ export function imageJobCost(): number {
 export async function recordAiJob(params: {
   organizationId: string;
   userId: string;
-  type: 'ADAPT_IMAGE' | 'FIELD_FILL';
+  /** GENERATE — narx tavsiyasi kabi matnli chaqiruvlar (aniq turi metadata da) */
+  type: 'ADAPT_IMAGE' | 'FIELD_FILL' | 'GENERATE';
   provider: string;
   status: 'COMPLETED' | 'FAILED';
   inputUrl?: string;

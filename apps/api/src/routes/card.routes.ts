@@ -19,6 +19,7 @@ router.post('/upload', controller.uploadMiddleware, controller.uploadImage);
 // AI qadamlari
 router.post('/adapt-image', controller.adaptImage);
 router.post('/ai-fill', controller.aiFill);
+router.post('/price-advice', controller.priceAdvice);
 router.get('/ai-usage', controller.aiUsage);
 
 // Kategoriya katalogi — marketplace ID'larini qidirish

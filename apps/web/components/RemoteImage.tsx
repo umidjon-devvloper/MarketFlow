@@ -50,12 +50,20 @@ export function RemoteImage({
   const [failed, setFailed] = useState(false);
   const [missing, setMissing] = useState(false);
 
-  const box = `relative overflow-hidden ${className}`;
+  // `inline-block` shart: o'rov elementi <span>, ya'ni oddiy holatda inline —
+  // inline elementga esa w-28 h-28 kabi o'lcham berilmaydi va rasm nolga siqilib
+  // qoladi. Flex konteyner ichida bo'lsa brauzer uni o'zi blok qiladi, shuning
+  // uchun xato faqat oddiy blok ota-element ichida ko'rinardi (masalan rasm
+  // moslashtirish qadamidagi "Asl → Wildberries" ustunlari).
+  // Ikki display klassini bitta qatorga qo'shmaymiz: qaysi biri g'olib bo'lishi
+  // Tailwind chiqargan CSS tartibiga bog'liq bo'lib qolardi. Har shoxobcha o'z
+  // display'ini o'zi beradi.
+  const box = `relative overflow-hidden align-middle ${className}`;
   const objectFit = fit === 'contain' ? 'object-contain' : 'object-cover';
 
   if (!src || missing) {
     return (
-      <span className={`${box} bg-panel flex items-center justify-center`}>
+      <span className={`${box} bg-panel inline-flex items-center justify-center`}>
         {fallback ?? <ImageOff className="w-1/3 h-1/3 text-muted/50" aria-hidden="true" />}
       </span>
     );
@@ -64,7 +72,7 @@ export function RemoteImage({
   // Optimizator bu hostni qabul qilmadi — asl manzilni o'zini ko'rsatamiz
   if (failed) {
     return (
-      <span className={box}>
+      <span className={`${box} inline-block`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
@@ -78,7 +86,7 @@ export function RemoteImage({
   }
 
   return (
-    <span className={box}>
+    <span className={`${box} inline-block`}>
       <Image
         src={src}
         alt={alt}

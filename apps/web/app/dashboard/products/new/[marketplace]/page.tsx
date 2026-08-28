@@ -24,6 +24,7 @@ import { CategoryPicker, CategoryOption } from '@/components/CategoryPicker';
 import { WbCharcFields, CharcField } from '@/components/listings/WbCharcFields';
 import { RemoteImage } from '@/components/RemoteImage';
 import { QualityPanel, QualityScore } from '@/components/quality/QualityBadge';
+import { PriceAdvisor } from '@/components/products/PriceAdvisor';
 import { useToast } from '@/components/Toast';
 import { SkeletonPage } from '@/components/Skeleton';
 import {
@@ -803,6 +804,17 @@ export default function NewCardPage() {
             <div key={group.key} className="card p-6">
               <h2 className="font-semibold">{group.label}</h2>
               {group.description && <p className="text-sm text-muted mt-0.5">{group.description}</p>}
+
+              {/* Narx bo'limi — AI narx tavsiyasi maydonlardan oldin turadi */}
+              {group.key === 'price' && (
+                <PriceAdvisor
+                  marketplace={spec.id}
+                  color={spec.color}
+                  currency={spec.currency}
+                  values={values}
+                  onApplyPrice={(price) => setValues((prev) => ({ ...prev, price: String(price) }))}
+                />
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 {group.fields

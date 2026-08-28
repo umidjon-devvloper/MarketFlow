@@ -5,14 +5,16 @@
  * 2. GET  /api/cards/specs/:mp        — o'sha marketplace'ning to'liq maydonlari
  * 3. POST /api/cards/adapt-image      — rasmni AI bilan marketplace o'lchamiga moslash
  * 4. POST /api/cards/ai-fill          — rasmga qarab maydonlarni AI to'ldirsin
- * 5. POST /api/cards                  — kartochkani saqlash (Product + Listing)
- * 6. GET  /api/cards                  — saqlangan kartochkalar
- * 7. POST /api/cards/export           — marketplace formatida Excel
+ * 5. POST /api/cards/price-advice     — AI narx tavsiyasi va qo'yilgan narxga baho
+ * 6. POST /api/cards                  — kartochkani saqlash (Product + Listing)
+ * 7. GET  /api/cards                  — saqlangan kartochkalar
+ * 8. POST /api/cards/export           — marketplace formatida Excel
  */
 
 import { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import { Marketplace } from '@prisma/client';
 import { prisma } from '../utils/prisma';
 import { HttpError } from '../middleware/error.middleware';
 import {
@@ -25,6 +27,7 @@ import {
 import { adaptImageToSpec } from '../services/image/adapt.service';
 import { storeImage, hasCloudStorage } from '../services/image/storage';
 import { fillFieldsFromImages } from '../services/ai/vision.service';
+import { suggestPrice } from '../services/ai/price-advisor.service';
 import {
   assertAiQuota,
   recordAiJob,
@@ -240,6 +243,137 @@ export async function aiUsage(req: Request, res: Response, next: NextFunction) {
     res.json(await getQuotaStatus(req.organization!.id));
   } catch (err) {
     next(err);
+  }
+}
+
+// ============================================
+// AI narx tavsiyasi
+// ============================================
+
+const priceAdviceSchema = z.object({
+  marketplace: z.string(),
+  /** Formadagi to'ldirilgan maydonlar — AI shu kontekstga qarab narx beradi */
+  values: z.record(z.string(), z.any()).default({}),
+  /** Sotuvchi qo'lda kiritgan narx — bo'lsa unga baho beriladi */
+  price: z.number().positive().optional(),
+  /** Tannarx — bo'lsa, tavsiya undan past bo'lmaydi */
+  costPrice: z.number().positive().optional(),
+});
+
+/**
+ * Forma qiymatini matnga aylantiradi.
+ *
+ * `values` ochiq record — ichiga obyekt yoki massiv ham tushishi mumkin. Ularni
+ * String() bilan o'girsak promptga "[object Object]" kirib ketardi, AI esa shunga
+ * qarab narx aytardi. Faqat oddiy qiymatlar olinadi.
+ */
+function asText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+}
+
+/** Narx tavsiyasiga aloqasi yo'q maydonlar — promptga kirmaydi */
+const PRICE_CONTEXT_SKIP = new Set(['price', 'stock', 'vat', 'categoryId', 'sku', 'barcode']);
+
+/**
+ * POST /api/cards/price-advice
+ *
+ * "Bu mahsulotni qanchaga qo'yay?" va "qo'ygan narxim bozorga to'g'ri keladimi?"
+ *
+ * Valyuta marketplace spetsifikatsiyasidan olinadi (Uzum → UZS, qolgani → RUB) va
+ * boshqa valyutadagi raqobatchilar taqqoslashga umuman kirmaydi.
+ */
+export async function priceAdvice(req: Request, res: Response, next: NextFunction) {
+  const organizationId = req.organization!.id;
+  const userId = req.user!.userId;
+
+  try {
+    const body = priceAdviceSchema.parse(req.body);
+    const spec = getSpec(body.marketplace.toUpperCase());
+    if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
+
+    const title = asText(body.values.title);
+    if (!title) {
+      throw new HttpError(400, "Avval mahsulot nomini kiriting — nomsiz narx tavsiya qilib bo'lmaydi");
+    }
+
+    await assertAiQuota(organizationId);
+
+    // Maydon kalitlarini AI tushunadigan yorliqqa aylantiramiz
+    const fields = allFields(spec);
+    const attributes: Record<string, string> = {};
+    for (const field of fields) {
+      if (field.hidden || PRICE_CONTEXT_SKIP.has(field.key)) continue;
+      if (field.key === 'title' || field.key === 'brand' || field.key === 'category') continue;
+      const raw = asText(body.values[field.key]);
+      // Tavsif 5000 belgigacha bo'lishi mumkin — butunicha yuborsak prompt
+      // (va hisob) bekorga shishadi. Narx uchun boshi yetarli.
+      if (raw) attributes[field.label] = raw.length > 200 ? `${raw.slice(0, 200)}…` : raw;
+    }
+
+    // Shu marketplace bo'yicha kuzatilayotgan raqobatchi narxlari.
+    // Kuzatuv marketplace'ga bog'langani uchun valyuta ham o'shanikidir; baribir
+    // taqqoslashdan oldin servis ichida valyuta yana bir bor solishtiriladi.
+    const watches = await prisma.competitorWatch.findMany({
+      where: { organizationId, marketplace: spec.id as Marketplace, lastPrice: { not: null } },
+      select: { label: true, lastTitle: true, lastPrice: true, lastCurrency: true },
+      orderBy: { lastCheckedAt: 'desc' },
+      take: 10,
+    });
+
+    const advice = await suggestPrice({
+      marketplaceName: spec.name,
+      currency: spec.currency,
+      title,
+      brand: asText(body.values.brand) || undefined,
+      category: asText(body.values.category) || undefined,
+      attributes,
+      currentPrice: body.price,
+      costPrice: body.costPrice,
+      competitors: watches.map((w) => ({
+        label: w.label || w.lastTitle || 'raqobatchi',
+        price: Number(w.lastPrice),
+        currency: w.lastCurrency || spec.currency,
+        title: w.lastTitle,
+      })),
+    });
+
+    await recordAiJob({
+      organizationId,
+      userId,
+      // AiJobType da alohida tur yo'q — bazani o'zgartirmaslik uchun GENERATE
+      // ishlatiladi, aniq turi metadata da turadi.
+      type: 'GENERATE',
+      provider: advice.provider,
+      status: 'COMPLETED',
+      tokensUsed: advice.tokensUsed,
+      costUsd: estimateTextCost(advice.tokensUsed),
+      metadata: {
+        kind: 'price-advice',
+        marketplace: spec.id,
+        currency: advice.currency,
+        recommended: advice.recommended,
+        competitorsUsed: watches.length,
+      },
+    });
+
+    const quota = await getQuotaStatus(organizationId);
+    res.json({ ...advice, quota });
+  } catch (err: any) {
+    if (err?.name === 'ZodError' || err instanceof HttpError) return next(err);
+
+    await recordAiJob({
+      organizationId,
+      userId,
+      type: 'GENERATE',
+      provider: 'openai',
+      status: 'FAILED',
+      error: err.message,
+      metadata: { kind: 'price-advice' },
+    });
+    next(new HttpError(502, err.message));
   }
 }
 
