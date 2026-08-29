@@ -474,10 +474,16 @@ export async function fillFieldsFromImages(
     throw new Error("Bu kategoriyada to'ldiriladigan xususiyat yo'q");
   }
 
-  const fields = (scope === 'charcs' ? [] : fillableFields(spec)).map((field) => {
-    const options = dynamicOptions[field.key];
-    return options?.length ? { ...field, options } : field;
-  });
+  const fields = (scope === 'charcs' ? [] : fillableFields(spec))
+    .map((field) => {
+      const options = dynamicOptions[field.key];
+      return options?.length ? { ...field, options } : field;
+    })
+    // Ro'yxatdan tanlanadigan maydon (TN VED), lekin ro'yxat kelmagan bo'lsa
+    // (kategoriya hali tanlanmagan) — AI dan so'ramaymiz. Aks holda u kodni
+    // o'ylab topadi va yarim qiymat yozadi ("6105"), keyin uni tozalash kerak
+    // bo'ladi. Kategoriya aniqlangach kod baribir server tomonda tanlanadi.
+    .filter((field) => !(field.optionsFrom && !field.options?.length));
 
   // Majburiy → ommabop → qolgani tartibida, chegaragacha
   const ordered = [...allCharcs].sort((a, b) => {

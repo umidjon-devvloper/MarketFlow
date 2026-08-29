@@ -272,58 +272,74 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
     // AI kategoriya NOMINI aytadi, joylash uchun esa katalog ID kerak.
     // Sotuvchi uni qo'lda qidirishi shart edi — bir bosishda to'ldirish shu
     // yerda uzilardi. Nomni katalogga bog'lab, ID ni ham qaytaramiz.
-    if (result.values.category && !body.categoryId && spec.id !== 'UZUM') {
-      const cred = await prisma.userMarketplace.findFirst({
-        where: { organizationId, marketplace: spec.id as Marketplace, isActive: true },
-      });
-      if (cred) {
-        try {
-          const options = await searchCategories(
-            spec.id,
-            {
-              apiKey: decrypt(cred.apiKey),
-              apiSecret: cred.apiSecret ? decrypt(cred.apiSecret) : null,
-              shopId: cred.shopId,
-            },
-            { query: result.values.category, limit: 30 },
-          );
-          const matched = await matchCategory(
-            result.values.title || result.values.category,
-            result.values.category,
-            options,
-          );
-          if (matched) {
-            result.values.category = matched.option.name;
-            result.values.categoryId = matched.option.id;
-            if (!matched.exact) {
-              result.notes.push(
-                `Kategoriya katalogdan tanlandi: "${matched.option.name}" — to'g'ri emasmi, o'zgartiring`,
-              );
-            }
+    let resolvedCategoryId = body.categoryId ?? '';
+    const cred = await prisma.userMarketplace.findFirst({
+      where: { organizationId, marketplace: spec.id as Marketplace, isActive: true },
+    });
 
-            // Kategoriya endi ma'lum — TN VED ro'yxati ham shu bosishda
-            // olinadi. Aks holda sotuvchi tugmani ikkinchi marta bosishi
-            // kerak bo'lardi: birinchi bosishda kategoriya hali yo'q edi.
-            if (spec.id === 'WB' && !result.values.tnved) {
-              const codes = await getWbTnved(decrypt(cred.apiKey), matched.option.id).catch(() => []);
-              const picked = await chooseTnved(
-                `Mahsulot: ${result.values.title || ''}. Tarkib: ${result.values.composition || "ko'rsatilmagan"}. Jinsi: ${result.values.gender || "ko'rsatilmagan"}. Kategoriya: ${matched.option.name}.`,
-                codes.map((c) => c.tnved),
-              );
-              if (picked) {
-                result.values.tnved = picked;
-                result.notes.push(
-                  `TN VED kodini AI tanladi (${picked}) — bojxona uchun tekshirib qo'ying`,
-                );
-              }
-            }
-          } else {
+    if (cred && spec.id !== 'UZUM' && result.values.category && !resolvedCategoryId) {
+      try {
+        const options = await searchCategories(
+          spec.id,
+          {
+            apiKey: decrypt(cred.apiKey),
+            apiSecret: cred.apiSecret ? decrypt(cred.apiSecret) : null,
+            shopId: cred.shopId,
+          },
+          { query: result.values.category, limit: 30 },
+        );
+        const matched = await matchCategory(
+          result.values.title || result.values.category,
+          result.values.category,
+          options,
+        );
+        if (matched) {
+          result.values.category = matched.option.name;
+          result.values.categoryId = matched.option.id;
+          resolvedCategoryId = matched.option.id;
+          if (!matched.exact) {
             result.notes.push(
-              `"${result.values.category}" katalogdan topilmadi — kategoriyani o'zingiz tanlang`,
+              `Kategoriya katalogdan tanlandi: "${matched.option.name}" — to'g'ri emasmi, o'zgartiring`,
             );
           }
-        } catch {
-          // Katalog o'qilmadi (kalit yoki limit) — nom qoladi, sotuvchi tanlaydi
+        } else {
+          result.notes.push(
+            `"${result.values.category}" katalogdan topilmadi — kategoriyani o'zingiz tanlang`,
+          );
+        }
+      } catch {
+        // Katalog o'qilmadi (kalit yoki limit) — nom qoladi, sotuvchi tanlaydi
+      }
+    }
+
+    // TN VED — oxirgi so'z shu yerda. AI kategoriya ma'lum bo'lmagan paytda
+    // to'ldirsa, kodni o'ylab topadi va yarim qiymat yozishi mumkin ("6105").
+    // Shuning uchun qiymat BOR bo'lsa ham ro'yxatga solishtiriladi: mos
+    // kelmasa qayta tanlanadi, tanlab bo'lmasa umuman o'chiriladi —
+    // yaroqsiz kod formada qolib, sotuvchini adashtirmasin.
+    if (cred && spec.id === 'WB' && resolvedCategoryId) {
+      const codes = await getWbTnved(decrypt(cred.apiKey), resolvedCategoryId).catch(() => []);
+      const allowed = codes.map((c) => c.tnved);
+      const current = String(result.values.tnved ?? '').trim();
+
+      if (allowed.length && !allowed.includes(current)) {
+        const picked = await chooseTnved(
+          `Mahsulot: ${result.values.title || ''}. Tarkib: ${result.values.composition || "ko'rsatilmagan"}. ` +
+            `Jinsi: ${result.values.gender || "ko'rsatilmagan"}. Kategoriya: ${result.values.category || ''}.`,
+          allowed,
+        );
+        if (picked) {
+          result.values.tnved = picked;
+          // "Chesniy znak" — huquqiy majburiyat: shunday kod tanlansa tovar
+          // markirovka qilinishi shart. Sotuvchi buni bilmay qolmasin.
+          const needsKiz = codes.find((c) => c.tnved === picked)?.isKiz;
+          result.notes.push(
+            `TN VED kodini AI tanladi (${picked}) — bojxona uchun tekshirib qo'ying` +
+              (needsKiz ? '. DIQQAT: bu kod "Chesniy znak" markirovkasini talab qiladi' : ''),
+          );
+        } else {
+          delete result.values.tnved;
+          result.notes.push("TN VED kodini tanlab bo'lmadi — ro'yxatdan o'zingiz tanlang");
         }
       }
     }
