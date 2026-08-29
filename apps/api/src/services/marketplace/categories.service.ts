@@ -393,12 +393,12 @@ export interface CharcField {
   unit?: string;
   /** Nechta qiymat: 0/1 — bitta, >1 — bir nechta */
   maxCount: number;
-  /** WB " commonly used" deb belgilagan — formaда oldinroq ko'rsatiladi */
+  /** WB " commonly used" deb belgilagan — formada oldinroq ko'rsatiladi */
   popular: boolean;
 }
 
 /**
- * Formaда alohida qat'iy maydon bilan qoplangan xarakteristikalar — dinamik
+ * Formada alohida qat'iy maydon bilan qoplangan xarakteristikalar — dinamik
  * bo'limda takrorlanmasligi uchun chiqarib tashlanadi (specs.ts WB maydonlari:
  * brand, color, composition, country, gender, season, contents, tnved +
  * paket габарит/вес top-level yuboriladi).
@@ -421,15 +421,33 @@ const WB_COVERED_CHARCS = new Set([
 ]);
 
 /**
+ * Xarakteristika nomini taqqoslash uchun kalit.
+ *
+ * WB nomni o'lchov birligi bilan beradi: "Вес товара с упаковкой (г)".
+ * Qavsni olib tashlamasak, ro'yxatdagi "вес товара с упаковкой" bilan mos
+ * kelmaydi va maydon dinamik formada takror chiqadi. Oqibati og'ir: WB
+ * og'irlikni endi xarakteristika sifatida qabul qilmaydi va kartochkani
+ * "weightBrutto in kilograms" xatosi bilan rad etadi.
+ */
+export function charcKey(name: string): string {
+  return normalize(String(name || '').replace(/\([^)]*\)/g, ' '));
+}
+
+/** Shu xarakteristika formada alohida qat'iy maydon bilan qoplanganmi */
+export function isCoveredCharc(name: string): boolean {
+  return WB_COVERED_CHARCS.has(charcKey(name));
+}
+
+/**
  * Kategoriya (subjectID) uchun WB xarakteristikalari — dinamik forma uchun.
- * Qat'iy maydonlar bilan qoplanganlarини chiqarib tashlaydi, muhimlarini
+ * Qat'iy maydonlar bilan qoplanganlarini chiqarib tashlaydi, muhimlarini
  * (required → popular) oldinga qo'yadi.
  */
 export async function getWbCharacteristics(apiKey: string, subjectId: number): Promise<CharcField[]> {
   const raw = await wb.getSubjectCharcs(apiKey, subjectId);
   const out: CharcField[] = [];
   for (const c of raw) {
-    if (WB_COVERED_CHARCS.has(normalize(String(c?.name || '')))) continue;
+    if (isCoveredCharc(String(c?.name || ''))) continue;
     out.push({
       id: c.charcID,
       name: c.name,

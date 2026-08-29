@@ -21,6 +21,7 @@ import { MarketplaceSpec, findField } from './specs';
 import * as ozon from './ozon-api.service';
 import * as wb from './wb-api.service';
 import * as yandex from './yandex-api.service';
+import { charcKey, isCoveredCharc } from './categories.service';
 
 export interface PublishInput {
   values: Record<string, any>;
@@ -353,12 +354,22 @@ const WB_CHARC_NAMES: Record<string, string[]> = {
   tnved: ['тнвэд', 'тн вэд'],
 };
 
+interface WbCharcResult {
+  characteristics: any[];
+  /**
+   * Xarakteristika sifatida kelgan, lekin yuborilmagan paket og'irligi
+   * (grammda). Sotuvchi "Qadoq" bo'limini emas, shu maydonni to'ldirgan
+   * bo'lishi mumkin — qiymatni yo'qotmaymiz, dimensions ga o'tkazamiz.
+   */
+  weightFromCharcG?: number;
+}
+
 async function buildWbCharacteristics(
   apiKey: string,
   subjectId: number,
   values: Record<string, any>,
   warnings: string[],
-): Promise<any[]> {
+): Promise<WbCharcResult> {
   let catalog: any[];
   try {
     catalog = await wb.getSubjectCharcs(apiKey, subjectId);
@@ -366,7 +377,7 @@ async function buildWbCharacteristics(
     warnings.push(
       `WB xarakteristikalarini o'qib bo'lmadi (${err?.message}) — faqat asosiy maydonlar yuborildi`,
     );
-    return [];
+    return { characteristics: [] };
   }
 
   const byName = new Map<string, any>();
@@ -388,6 +399,8 @@ async function buildWbCharacteristics(
   // Dinamik xarakteristikalar — formaда kategoriyaga qarab to'ldirilgan
   // (charcID → qiymat). Fixed maydon yuborganini takrorlamaymiz.
   const sent = new Set(out.map((c) => c.id));
+  const skippedCovered: string[] = [];
+  let weightFromCharcG: number | undefined;
   const dynamic = values.wbCharacteristics;
   if (dynamic && typeof dynamic === 'object') {
     const byId = new Map<number, any>(catalog.map((c: any) => [c.charcID, c]));
@@ -396,6 +409,21 @@ async function buildWbCharacteristics(
       if (!Number.isFinite(id) || sent.has(id)) continue;
       const charc = byId.get(id);
       if (!charc) continue;
+
+      // WB paket og'irligi va gabaritlarini endi xarakteristika sifatida
+      // QABUL QILMAYDI — ular faqat dimensions blokida ketadi, aks holda
+      // butun kartochka 400 bilan rad etiladi ("weightBrutto in kilograms").
+      // Eski qoralamalarda bu qiymatlar saqlanib qolgan bo'lishi mumkin,
+      // shuning uchun forma filtri bilan bir qatorda bu yerda ham to'samiz.
+      if (isCoveredCharc(String(charc.name || ''))) {
+        skippedCovered.push(String(charc.name));
+        if (charcKey(String(charc.name || '')) === 'вес товара с упаковкой') {
+          const grams = Number(String(raw).replace(',', '.'));
+          if (Number.isFinite(grams) && grams > 0) weightFromCharcG = grams;
+        }
+        continue;
+      }
+
       if (charc.charcType === 4) {
         const n = Number(String(raw).replace(',', '.'));
         if (Number.isFinite(n) && n > 0) {
@@ -416,14 +444,24 @@ async function buildWbCharacteristics(
     }
   }
 
+  if (skippedCovered.length) {
+    warnings.push(
+      `Bu xarakteristikalar yuborilmadi — WB ularni endi alohida bloklarda kutadi: ${skippedCovered.join(', ')}. ` +
+        `Qiymatlar "Qadoq" bo'limidagi og'irlik/o'lcham maydonlaridan olinadi.`,
+    );
+  }
+
+  // Qoplangan maydonlar (og'irlik, gabaritlar) WB katalogida "majburiy" deb
+  // turadi, lekin ular xarakteristika sifatida ketmaydi — ro'yxatda ularni
+  // "bo'sh" deb ko'rsatish sotuvchini yo'q muammoni qidirishga majbur qilardi.
   const missing = catalog
-    .filter((c: any) => c?.required && !sent.has(c.charcID))
+    .filter((c: any) => c?.required && !sent.has(c.charcID) && !isCoveredCharc(String(c?.name || '')))
     .map((c: any) => c.name);
   if (missing.length) {
     warnings.push(`WB majburiy deb belgilagan xarakteristikalar bo'sh: ${missing.slice(0, 6).join(', ')}`);
   }
 
-  return out;
+  return { characteristics: out, weightFromCharcG };
 }
 
 /**
@@ -471,7 +509,33 @@ async function publishWb(
   const vendorCode = str(v, 'sku');
   if (!vendorCode) throw new Error('WB uchun sotuvchi artikuli (SKU) majburiy');
 
-  const characteristics = await buildWbCharacteristics(creds.apiKey, subjectId, v, warnings);
+  const { characteristics, weightFromCharcG } = await buildWbCharacteristics(
+    creds.apiKey,
+    subjectId,
+    v,
+    warnings,
+  );
+
+  // WB paket og'irligini FAQAT dimensions.weightBrutto da, kilogrammda kutadi.
+  // Nol yoki bo'sh bo'lsa so'rov "should be specified in weightBrutto" xatosi
+  // bilan qaytadi — sababi tushunarsiz. Shuning uchun o'zimiz tekshiramiz va
+  // sotuvchi xarakteristikalarga yozgan og'irlikni ham qutqaramiz.
+  let weightKg = toApiUnits(spec, v, 'weight', 'kg');
+  if (weightKg <= 0 && weightFromCharcG) {
+    weightKg = Math.round((weightFromCharcG / 1000) * 1e6) / 1e6;
+    warnings.push(
+      `Paket og'irligi xarakteristikalardan olindi (${weightFromCharcG} g) — "Qadoq" bo'limidagi og'irlik maydoni bo'sh edi`,
+    );
+  }
+  if (weightKg <= 0) {
+    return {
+      success: false,
+      message:
+        "Paket og'irligi kiritilmagan. WB uni kilogrammda talab qiladi — " +
+        '"Qadoq" bo\'limidagi "Og\'irlik" maydonini to\'ldiring.',
+      warnings,
+    };
+  }
 
   // WB barkodsiz kartochkani qabul qilmaydi. Sotuvchida ko'pincha barkod
   // bo'lmaydi — shunda WB'ning o'zidan so'raymiz va buni aytib qo'yamiz.
@@ -513,7 +577,7 @@ async function publishWb(
             length: wbCm(toApiUnits(spec, v, 'packLength', 'sm')),
             width: wbCm(toApiUnits(spec, v, 'packWidth', 'sm')),
             height: wbCm(toApiUnits(spec, v, 'packHeight', 'sm')),
-            weightBrutto: toApiUnits(spec, v, 'weight', 'kg'),
+            weightBrutto: weightKg,
           },
           characteristics,
           sizes: [

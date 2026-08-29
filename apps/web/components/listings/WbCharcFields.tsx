@@ -121,7 +121,11 @@ function CharcInput({
       <label className="block text-sm font-medium mb-1">
         {field.name}
         {field.required && <span className="text-red-500 ml-0.5">*</span>}
-        {field.unit && <span className="text-muted font-normal ml-1">({field.unit})</span>}
+        {/* WB ba'zi nomlarga birlikni o'zi qo'shib beradi ("Вес ... (г)") —
+            ikkinchi marta yozsak "(г) (г)" bo'lib chiqadi */}
+        {field.unit && !field.name.includes(`(${field.unit})`) && (
+          <span className="text-muted font-normal ml-1">({field.unit})</span>
+        )}
       </label>
       <input
         type={field.type === 'number' ? 'number' : 'text'}
