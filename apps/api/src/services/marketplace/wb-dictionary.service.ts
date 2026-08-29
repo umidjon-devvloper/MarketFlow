@@ -53,6 +53,20 @@ const ALIASES: Record<string, string[]> = {
   polsha: ['Польша'],
 };
 
+/**
+ * WB da MAVJUD BO'LMAGAN qiymatlar.
+ *
+ * Ma'lumotnomaga suyanish yetarli emas: WB so'rov limiti tez-tez uriladi va
+ * ro'yxat o'qilmay qolsa zaxira yo'l taxminiy ruscha nomni yuborardi —
+ * "Унисекс" aynan shunday o'tib ketgan va kabinetda "Invalid value in the
+ * Gender field" bergan. WB kinds ro'yxatida atigi 5 qiymat bor
+ * (Мужской, Женский, Детский, Девочки, Мальчики), unisex esa yo'q.
+ *
+ * Bu ro'yxatdagilar hech qachon yuborilmaydi — internet ham, limit ham
+ * ta'sir qilmaydi.
+ */
+const WB_UNSUPPORTED = new Set(['unisex', 'унисекс']);
+
 function norm(text: string): string {
   return String(text || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
 }
@@ -111,8 +125,12 @@ async function directoryNames(apiKey: string, directory: WbDirectory): Promise<s
 }
 
 export interface WbValueResult {
-  /** WB ga yuboriladigan qiymat */
-  value: string;
+  /**
+   * WB ga yuboriladigan qiymat. `null` — yuborilmasin: ma'lumotnoma o'qildi,
+   * lekin bu qiymat unda yo'q. Bunday qiymatni yuborish kartochkani
+   * kabinetda qizil xatoga aylantiradi ("Invalid value in the Gender field").
+   */
+  value: string | null;
   /** Ma'lumotnomadan tasdiqlanganmi */
   verified: boolean;
   /** Sotuvchiga aytiladigan eslatma */
@@ -128,6 +146,14 @@ export async function toWbValue(
   directory: WbDirectory,
   uzValue: string,
 ): Promise<WbValueResult> {
+  if (WB_UNSUPPORTED.has(norm(uzValue))) {
+    return {
+      value: null,
+      verified: false,
+      note: `"${uzValue}" WB da mavjud emas — bu maydon yuborilmadi. Aniq jinsni tanlang (erkaklar, ayollar, bolalar)`,
+    };
+  }
+
   const candidates = candidatesFor(uzValue);
 
   try {
@@ -135,10 +161,14 @@ export async function toWbValue(
     if (names.length) {
       const match = pickFromDirectory(candidates, names);
       if (match) return { value: match, verified: true };
+
+      // Ro'yxat o'qildi va bu qiymat unda YO'Q — taxmin qilib yubormaymiz.
+      // Yaroqsiz qiymat kartochkani kabinetda qizil qiladi va tovar sotuvga
+      // chiqmaydi; maydonni bo'sh qoldirish esa zarar qilmaydi.
       return {
-        value: candidates[0],
+        value: null,
         verified: false,
-        note: `"${uzValue}" WB ma'lumotnomasida topilmadi — "${candidates[0]}" yuborildi, kabinetda tekshiring`,
+        note: `"${uzValue}" WB ro'yxatida yo'q — bu maydon yuborilmadi. Kabinetdan mos qiymatni tanlang`,
       };
     }
   } catch (err: any) {

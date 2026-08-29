@@ -42,9 +42,11 @@ describe('WB lug\'ati', () => {
   });
 
   it('ma\'lumotnomada bo\'lmagan qiymat uchun null qaytaradi', () => {
-    // "Унисекс" WB kinds ro'yxatida yo'q — taxminiy qiymat yuboriladi va
-    // sotuvchi ogohlantiriladi, jimgina noto'g'ri qiymat ketmaydi
-    expect(pickFromDirectory(candidatesFor('Unisex'), ['Мужской', 'Женский'])).toBeNull();
+    // WB kinds ro'yxatida atigi 5 qiymat bor va "Унисекс" ular ichida yo'q.
+    // Yuborilgan holat kabinetda "Invalid value in the Gender field" bergan —
+    // shuning uchun bunday qiymat endi umuman yuborilmaydi.
+    const kinds = ['Мужской', 'Женский', 'Детский', 'Девочки', 'Мальчики'];
+    expect(pickFromDirectory(candidatesFor('Unisex'), kinds)).toBeNull();
   });
 
   it('ro\'yxatda yo\'q qiymatni o\'zini qaytaradi', () => {
@@ -55,5 +57,29 @@ describe('WB lug\'ati', () => {
     expect(extractNames(['Мужской', 'Женский'])).toEqual(['Мужской', 'Женский']);
     expect(extractNames([{ name: 'Турция' }, { fullName: 'Италия' }])).toEqual(['Турция', 'Италия']);
     expect(extractNames(null)).toEqual([]);
+  });
+});
+
+/**
+ * Ma'lumotnomaga suyanish yetarli emas: WB so'rov limiti tez uriladi va
+ * ro'yxat o'qilmay qolsa zaxira yo'l taxminiy ruscha nomni yuborardi.
+ * "Унисекс" aynan shunday o'tib ketib, kabinetda xato bergan.
+ */
+describe("WB da mavjud bo'lmagan qiymatlar", () => {
+  it('unisex hech qanday holatda yuborilmaydi', async () => {
+    const { toWbValue } = await import('../services/marketplace/wb-dictionary.service');
+    // Kalit ataylab yaroqsiz — qiymat tarmoqqa chiqmasdan to'silishi kerak
+    const r = await toWbValue('yaroqsiz-kalit', 'kinds', 'Unisex');
+    expect(r.value).toBeNull();
+    expect(r.note).toContain('yuborilmadi');
+  });
+
+  it('WB formasida unisex varianti umuman yo\'q', async () => {
+    const { getSpec } = await import('../services/marketplace/specs');
+    const gender = getSpec('WB')!
+      .groups.flatMap((g) => g.fields)
+      .find((f) => f.key === 'gender');
+    expect(gender?.options).not.toContain('Unisex');
+    expect(gender?.options).toContain('Erkaklar');
   });
 });

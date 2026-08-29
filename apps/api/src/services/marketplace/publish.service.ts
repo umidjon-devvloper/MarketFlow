@@ -413,8 +413,10 @@ async function buildWbCharacteristics(
     const directory = WB_DICTIONARY_FIELDS[key];
     if (directory) {
       const mapped = await toWbValue(apiKey, directory, text);
-      text = mapped.value;
       if (mapped.note) warnings.push(mapped.note);
+      // Ro'yxatda yo'q qiymat — maydonni umuman yubormaymiz
+      if (!mapped.value) continue;
+      text = mapped.value;
     }
 
     // WB son tipidagi xarakteristikani massiv emas, son sifatida kutadi

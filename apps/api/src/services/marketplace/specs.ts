@@ -141,6 +141,16 @@ const COUNTRIES = [
 
 const GENDERS = ['Erkaklar', 'Ayollar', 'Unisex', 'Bolalar', "O'g'il bolalar", 'Qiz bolalar'];
 
+/**
+ * WB jinsi ro'yxati — "Unisex" YO'Q.
+ *
+ * WB ning o'z ma'lumotnomasida (directory/kinds) atigi 5 qiymat bor:
+ * Мужской, Женский, Детский, Девочки, Мальчики. "Унисекс" u yerda yo'q va
+ * yuborilsa kartochka kabinetda "Invalid value in the Gender field" bilan
+ * qizil bo'lib qoladi — tovar sotuvga chiqmaydi.
+ */
+const WB_GENDERS = GENDERS.filter((g) => g !== 'Unisex');
+
 const SEASONS = ['Yoz', 'Qish', 'Demi-mavsum', 'Barcha mavsum'];
 
 // ============================================
@@ -589,7 +599,7 @@ const WB: MarketplaceSpec = {
         { key: 'composition', label: 'Tarkib (Состав)', excelHeader: 'Состав', type: 'text', required: true, aiFillable: true, placeholder: 'хлопок 95%, эластан 5%' },
         { key: 'size', label: "O'lchamlar", excelHeader: 'Размер', type: 'text', required: false, aiFillable: true },
         { key: 'country', label: 'Ishlab chiqarilgan davlat', excelHeader: 'Страна производства', type: 'select', required: true, options: COUNTRIES, aiFillable: true },
-        { key: 'gender', label: 'Jinsi', excelHeader: 'Пол', type: 'select', required: false, options: GENDERS, aiFillable: true },
+        { key: 'gender', label: 'Jinsi', excelHeader: 'Пол', type: 'select', required: false, options: WB_GENDERS, aiFillable: true },
         { key: 'season', label: 'Mavsum', excelHeader: 'Сезон', type: 'select', required: false, options: SEASONS, aiFillable: true },
         { key: 'contents', label: 'Komplektatsiya', excelHeader: 'Комплектация', type: 'text', required: false, aiFillable: true, placeholder: 'ko\'ylak 1 dona' },
         {
