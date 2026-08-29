@@ -207,6 +207,11 @@ const aiFillSchema = z.object({
   hints: z.record(z.string(), z.string()).default({}),
   /** Kategoriyaga bog'liq dinamik maydonlar (WB) — bo'lsa ular ham to'ldiriladi */
   charcs: z.array(charcInputSchema).max(300).default([]),
+  /**
+   * 'charcs' — faqat kategoriya xususiyatlarini to'ldirish. Shu bo'limdagi
+   * alohida tugma uchun: asosiy maydonlarni qayta so'rash ortiqcha token.
+   */
+  scope: z.enum(['all', 'charcs']).default('all'),
 });
 
 export async function aiFill(req: Request, res: Response, next: NextFunction) {
@@ -220,7 +225,13 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
 
     await assertAiQuota(organizationId);
 
-    const result = await fillFieldsFromImages(body.imageUrls, spec, body.hints, body.charcs);
+    const result = await fillFieldsFromImages(
+      body.imageUrls,
+      spec,
+      body.hints,
+      body.charcs,
+      body.scope,
+    );
 
     await recordAiJob({
       organizationId,
@@ -233,6 +244,7 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
       costUsd: estimateTextCost(result.tokensUsed),
       metadata: {
         marketplace: spec.id,
+        scope: body.scope,
         filled: Object.keys(result.values).length,
         charcsFilled: Object.keys(result.charcValues).length,
       },

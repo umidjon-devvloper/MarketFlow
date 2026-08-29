@@ -26,11 +26,16 @@ export function WbCharcFields({
   values,
   onChange,
   loading,
+  onAiFill,
+  aiFilling,
 }: {
   charcs: CharcField[];
   values: Record<string, string>;
   onChange: (id: number, value: string) => void;
   loading?: boolean;
+  /** Shu bo'limni AI to'ldirsin. Berilmasa tugma ko'rinmaydi */
+  onAiFill?: () => void;
+  aiFilling?: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
 
@@ -54,7 +59,24 @@ export function WbCharcFields({
           <Sparkles className="h-4 w-4 text-accent" />
           Kategoriya xususiyatlari
         </h3>
-        <span className="text-xs text-muted">{charcs.length} ta maydon</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted">{charcs.length} ta maydon</span>
+          {onAiFill && (
+            <button
+              type="button"
+              onClick={onAiFill}
+              disabled={aiFilling}
+              className="btn px-3 py-1.5 text-xs font-medium border border-line text-accent hover:bg-panel transition disabled:opacity-50"
+            >
+              {aiFilling ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {aiFilling ? "To'ldirilmoqda..." : "AI to'ldirsin"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">

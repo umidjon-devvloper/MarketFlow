@@ -157,6 +157,8 @@ export default function NewCardPage() {
   // Kategoriyaga mos dinamik xarakteristikalar — charcID → qiymat
   const [wbCharcs, setWbCharcs] = useState<Record<string, string>>({});
   const [aiFilling, setAiFilling] = useState(false);
+  /** Kategoriya xususiyatlari bo'limidagi tugma alohida kutadi */
+  const [charcFilling, setCharcFilling] = useState(false);
   const [aiNotes, setAiNotes] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -353,15 +355,26 @@ export default function NewCardPage() {
     }
   };
 
-  /** AI rasmga qarab maydonlarni to'ldiradi */
-  const runAiFill = async () => {
+  /**
+   * AI rasmga qarab maydonlarni to'ldiradi.
+   *
+   * scope='charcs' — faqat kategoriya xususiyatlari (o'sha bo'limdagi tugma).
+   * Asosiy maydonlar so'ralmaydi: ular allaqachon to'ldirilgan bo'ladi va
+   * qayta so'rash bekorga token sarflaydi.
+   */
+  const runAiFill = async (scope: 'all' | 'charcs' = 'all') => {
     if (!spec) return;
     if (!exportImageUrls.length) {
       toast('error', 'Avval rasm yuklang');
       return;
     }
+    if (scope === 'charcs' && !charcFields.length) {
+      toast('error', "Avval kategoriyani tanlang — xususiyatlar shundan keyin chiqadi");
+      return;
+    }
 
-    setAiFilling(true);
+    const setBusy = scope === 'charcs' ? setCharcFilling : setAiFilling;
+    setBusy(true);
     setAiNotes([]);
     try {
       const hints: Record<string, string> = {};
@@ -375,6 +388,7 @@ export default function NewCardPage() {
         marketplace: spec.id,
         imageUrls: exportImageUrls.slice(0, 4),
         hints,
+        scope,
         // Kategoriya xususiyatlari ham to'ldirilsin — ular spec'da yo'q,
         // kategoriya tanlangandan keyin marketplace'dan keladi
         charcs: charcFields.map((c) => ({
@@ -411,16 +425,26 @@ export default function NewCardPage() {
       setAiNotes(data.notes || []);
       const count = Object.keys(data.values || {}).length;
       const charcCount = Object.keys(charcValues).length;
-      toast(
-        'success',
-        charcCount
-          ? `AI ${count} ta maydon va ${charcCount} ta xususiyatni to'ldirdi (${data.provider})`
-          : `AI ${count} ta maydonni to'ldirdi (${data.provider})`,
-      );
+
+      if (scope === 'charcs') {
+        toast(
+          charcCount ? 'success' : 'info',
+          charcCount
+            ? `AI ${charcCount} ta xususiyatni to'ldirdi (${data.provider})`
+            : 'AI rasmdan hech narsa aniqlay olmadi — qo\'lda kiriting',
+        );
+      } else {
+        toast(
+          'success',
+          charcCount
+            ? `AI ${count} ta maydon va ${charcCount} ta xususiyatni to'ldirdi (${data.provider})`
+            : `AI ${count} ta maydonni to'ldirdi (${data.provider})`,
+        );
+      }
     } catch (err: any) {
       toast('error', err.response?.data?.error || "AI to'ldirish ishlamadi");
     } finally {
-      setAiFilling(false);
+      setBusy(false);
     }
   };
 
@@ -807,7 +831,7 @@ export default function NewCardPage() {
               </div>
             </div>
             <button
-              onClick={runAiFill}
+              onClick={() => runAiFill('all')}
               disabled={aiFilling}
               className="btn px-5 py-2.5 text-white font-semibold shadow-btn transition hover:shadow-btn-hover disabled:opacity-50 whitespace-nowrap"
               style={{ background: spec.color }}
@@ -871,6 +895,8 @@ export default function NewCardPage() {
                 values={wbCharcs}
                 loading={charcsLoading}
                 onChange={(id, v) => setWbCharcs((prev) => ({ ...prev, [String(id)]: v }))}
+                onAiFill={() => runAiFill('charcs')}
+                aiFilling={charcFilling}
               />
             </div>
           )}

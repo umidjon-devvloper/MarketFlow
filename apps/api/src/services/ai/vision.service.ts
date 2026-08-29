@@ -94,7 +94,7 @@ function fillableFields(spec: MarketplaceSpec): SpecField[] {
   return allFields(spec).filter((f) => f.aiFillable);
 }
 
-function buildSystemPrompt(spec: MarketplaceSpec): string {
+function buildSystemPrompt(spec: MarketplaceSpec, includeLongText: boolean): string {
   return [
     `Sen ${spec.name} marketplace'i uchun mahsulot kartochkasini to'ldiradigan tajribali kontent menejersan.`,
     `Sotuvchi rasm yubordi. Rasmga qarab kartochka maydonlarini to'ldirasan.`,
@@ -106,13 +106,17 @@ function buildSystemPrompt(spec: MarketplaceSpec): string {
     `- Variantlari raqamlangan maydonlarda javob sifatida FAQAT raqamni yoz`,
     `  (masalan "2"), variant matnini emas. Mos variant bo'lmasa — bo'sh qoldir.`,
     `- Har bir maydonning belgi chegarasiga qat'iy rioya qil.`,
-    `- TAVSIF — eng muhim maydon: qidiruv shu matnga qarab topadi va u UZUN bo'lishi shart.`,
-    `  Kamida ${MIN_LONG_TEXT} belgi yoz. Bu talab, tavsiya emas: qisqa tavsif qabul qilinmaydi.`,
-    `  Tuzilishi — 4 ta xatboshi, har biri 3-4 gapdan:`,
-    `  1) mahsulot nima va nimasi bilan ajralib turadi;`,
-    `  2) material, sifat, tikuv/ishlanish tafsilotlari;`,
-    `  3) kimga va qanday holatlarga mos, nima bilan kiyish/ishlatish mumkin;`,
-    `  4) parvarish qoidasi, o'lcham tanlash bo'yicha maslahat, komplektatsiya.`,
+    ...(includeLongText
+      ? [
+          `- TAVSIF — eng muhim maydon: qidiruv shu matnga qarab topadi va u UZUN bo'lishi shart.`,
+          `  Kamida ${MIN_LONG_TEXT} belgi yoz. Bu talab, tavsiya emas: qisqa tavsif qabul qilinmaydi.`,
+          `  Tuzilishi — 4 ta xatboshi, har biri 3-4 gapdan:`,
+          `  1) mahsulot nima va nimasi bilan ajralib turadi;`,
+          `  2) material, sifat, tikuv/ishlanish tafsilotlari;`,
+          `  3) kimga va qanday holatlarga mos, nima bilan kiyish/ishlatish mumkin;`,
+          `  4) parvarish qoidasi, o'lcham tanlash bo'yicha maslahat, komplektatsiya.`,
+        ]
+      : []),
     `- Javob FAQAT JSON obyekt bo'lsin, boshqa hech narsa yozma.`,
   ].join('\n');
 }
@@ -168,33 +172,49 @@ function buildUserPrompt(
   const charcBlock = charcs.length
     ? [
         ``,
-        `KATEGORIYA XUSUSIYATLARI (${charcs.length} ta) — bularni ham to'ldir.`,
-        `Kalit sifatida qavs ichidagi raqamni ishlat. Rasmdan yoki mahsulot turidan`,
-        `aniq bilinadiganini to'ldir, bilinmasa o'sha kalitni umuman yozma —`,
-        `noto'g'ri qiymat bo'sh maydondan yomonroq.`,
+        `KATEGORIYA XUSUSIYATLARI (${charcs.length} ta) — bularni to'ldir.`,
+        `Kalit sifatida qavs ichidagi raqamni ishlat.`,
+        `Rasmda to'g'ridan-to'g'ri ko'rinmasa ham, shu turdagi mahsulot uchun ODATIY`,
+        `bo'lgan qiymatni yoz (tarkib, o'lcham turi, taxminiy og'irlik kabi) —`,
+        `sotuvchi keyin tekshirib to'g'rilaydi, bo'sh maydon esa kartochkani rad ettiradi.`,
+        `Faqat taxmin qilib bo'lmaydiganini (sertifikat raqami, sana, artikul) bo'sh qoldir.`,
         ``,
         buildCharcSpecText(charcs),
       ].join('\n')
     : '';
 
+  // Faqat xususiyatlar so'ralganda asosiy maydonlar haqida umuman gapirmaymiz:
+  // ortiqcha ta'rif AI e'tiborini bo'ladi va tokenni bekorga yeydi.
+  const fieldBlock = fields.length
+    ? [
+        `${spec.name} kartochkasi uchun quyidagi maydonlarni rasmga qarab to'ldir:`,
+        ``,
+        buildFieldSpecText(fields),
+      ].join('\n')
+    : `${spec.name} kartochkasining kategoriya xususiyatlarini rasmga qarab to'ldir.`;
+
+  const answerShape = [
+    fields.length
+      ? `  "fields": {${fields
+          .map((f) =>
+            f.type === 'textarea' && (f.maxLength ?? 0) >= 1000
+              ? `"${f.key}": "(kamida ${MIN_LONG_TEXT} belgi, 4 xatboshi)"`
+              : `"${f.key}": "..."`,
+          )
+          .join(', ')}},`
+      : '',
+    `  "charcs": {${charcs.length ? '"<xususiyat raqami>": "qiymat"' : ''}}`,
+  ].filter(Boolean);
+
   return [
-    `${spec.name} kartochkasi uchun quyidagi maydonlarni rasmga qarab to'ldir:`,
-    ``,
-    buildFieldSpecText(fields),
+    fieldBlock,
     charcBlock,
     ``,
     hintLines.length ? `Sotuvchi bergan qo'shimcha maʼlumot:\n${hintLines.join('\n')}` : '',
     ``,
     `Javob formati (aynan shu tuzilishda JSON):`,
     `{`,
-    `  "fields": {${fields
-      .map((f) =>
-        f.type === 'textarea' && (f.maxLength ?? 0) >= 1000
-          ? `"${f.key}": "(kamida ${MIN_LONG_TEXT} belgi, 4 xatboshi)"`
-          : `"${f.key}": "..."`,
-      )
-      .join(', ')}},`,
-    `  "charcs": {${charcs.length ? '"<xususiyat raqami>": "qiymat"' : ''}}`,
+    ...answerShape,
     `}`,
   ]
     .filter(Boolean)
@@ -366,6 +386,15 @@ function sanitizeCharcs(charcs: CharcSpec[], parsed: Record<string, any>) {
     charcValues[String(charc.id)] = value;
   }
 
+  const numericFilled = charcs.filter(
+    (c) => c.type === 'number' && charcValues[String(c.id)] !== undefined,
+  );
+  if (numericFilled.length) {
+    notes.push(
+      `Raqamli xususiyatlar taxminiy (${numericFilled.map((c) => c.name).join(', ')}) — jo'natishdan oldin tekshiring`,
+    );
+  }
+
   return { charcValues, notes };
 }
 
@@ -431,10 +460,15 @@ export async function fillFieldsFromImages(
   spec: MarketplaceSpec,
   hints: Record<string, string> = {},
   allCharcs: CharcSpec[] = [],
+  /** 'charcs' — faqat kategoriya xususiyatlari (o'sha bo'limdagi tugma uchun) */
+  scope: 'all' | 'charcs' = 'all',
 ): Promise<VisionFillResult> {
   if (!imageUrls.length) throw new Error('Kamida bitta rasm kerak');
+  if (scope === 'charcs' && !allCharcs.length) {
+    throw new Error("Bu kategoriyada to'ldiriladigan xususiyat yo'q");
+  }
 
-  const fields = fillableFields(spec);
+  const fields = scope === 'charcs' ? [] : fillableFields(spec);
 
   // Majburiy → ommabop → qolgani tartibida, chegaragacha
   const ordered = [...allCharcs].sort((a, b) => {
@@ -443,7 +477,8 @@ export async function fillFieldsFromImages(
   });
   const charcs = ordered.slice(0, MAX_CHARCS_TO_ASK);
 
-  const systemPrompt = buildSystemPrompt(spec);
+  const wantsLongText = fields.some((f) => f.type === 'textarea' && (f.maxLength ?? 0) >= 1000);
+  const systemPrompt = buildSystemPrompt(spec, wantsLongText);
   const userPrompt = buildUserPrompt(spec, fields, hints, charcs);
 
   // Rasmlarni bir marta tayyorlaymiz — ikkala provayder ham shuni ishlatadi
@@ -492,4 +527,4 @@ export async function fillFieldsFromImages(
 }
 
 /** Testlar uchun — tashqaridan chaqirilmaydi */
-export const __internal = { sanitizeCharcs, buildCharcSpecText, toNumberOrNull };
+export const __internal = { sanitizeCharcs, buildCharcSpecText, toNumberOrNull, buildUserPrompt, buildSystemPrompt };
