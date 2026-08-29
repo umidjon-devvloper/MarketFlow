@@ -345,15 +345,20 @@ export async function getCards(
     size = 20,
     updatedAt,
     nmID,
-  }: { size?: number; updatedAt?: string; nmID?: number } = {},
+    textSearch,
+  }: { size?: number; updatedAt?: string; nmID?: number; textSearch?: string } = {},
 ): Promise<{ cards: any[]; cursor?: { updatedAt?: string; nmID?: number; total?: number } }> {
   const cursor: Record<string, unknown> = { limit: size };
   if (updatedAt) cursor.updatedAt = updatedAt;
   if (nmID) cursor.nmID = nmID;
 
+  const filter: Record<string, unknown> = { withPhoto: -1 };
+  // Artikul bo'yicha qidirish — katalogi katta sotuvchida yagona ishonchli yo'l
+  if (textSearch) filter.textSearch = textSearch;
+
   const data = await wbFetch<any>(apiKey, `${WB_CONTENT}/content/v2/get/cards/list`, {
     method: 'POST',
-    body: { settings: { cursor, filter: { withPhoto: -1 } } },
+    body: { settings: { cursor, filter } },
     bucket: 'cards',
   });
   return { cards: data?.cards || [], cursor: data?.cursor };
@@ -548,8 +553,30 @@ export async function findCardByVendorCode(
   apiKey: string,
   vendorCode: string,
 ): Promise<any | null> {
-  const { cards } = await getCards(apiKey, { size: 100 });
-  return cards.find((c: any) => c?.vendorCode === vendorCode) ?? null;
+  // Avval matnli qidiruv. Oldin bu yerda faqat "birinchi 100 kartochka"
+  // olinardi — 235 kartochkali do'konda yangi kartochka o'sha ro'yxatga
+  // tushmasdi va topilmadi deb hisoblanardi. Oqibati og'ir edi: nmID
+  // topilmagach rasm biriktirilmasdi, kartochka esa abadiy PENDING qolardi.
+  const direct = await getCards(apiKey, { size: 100, textSearch: vendorCode });
+  const hit = direct.cards.find((c: any) => c?.vendorCode === vendorCode);
+  if (hit) return hit;
+
+  // Zaxira: kursor bo'yicha varaqlash. WB matnli qidiruvni yangi
+  // kartochkalarda darrov qo'llamasligi mumkin.
+  let cursor = direct.cursor;
+  for (let page = 0; page < 10; page++) {
+    const res = await getCards(apiKey, {
+      size: 100,
+      updatedAt: cursor?.updatedAt,
+      nmID: cursor?.nmID,
+    });
+    const found = res.cards.find((c: any) => c?.vendorCode === vendorCode);
+    if (found) return found;
+    // Oxirgi sahifa — WB to'liq bo'lmagan to'plam qaytarsa tugadi
+    if (res.cards.length < 100) return null;
+    cursor = res.cursor;
+  }
+  return null;
 }
 
 /**
