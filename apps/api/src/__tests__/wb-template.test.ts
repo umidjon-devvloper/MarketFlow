@@ -34,9 +34,9 @@ const base = {
   barcode: '4600000000017',
   price: 15000,
   weight: 320, // gramm
-  packLength: 250, // mm
-  packWidth: 120,
-  packHeight: 80,
+  packLength: 25, // sm — forma o'lchamni santimetrda so'raydi
+  packWidth: 12,
+  packHeight: 8,
   color: 'Синий',
   material: 'Пластик',
   country: 'Xitoy',
@@ -74,15 +74,26 @@ describe('WB shabloni to\'ldirish', () => {
     expect(cellByHeader(header, row5, 'VAT rate')).toBe('');
   });
 
-  it('og\'irlik grammdan kg ga, o\'lcham mm dan butun sm ga o\'giriladi', () => {
+  it("og'irlik grammdan kg ga o'giriladi, o'lcham esa santimetrda qoladi", () => {
+    // Avval bu yerda mm → sm o'girish bor edi (10 ga bo'lardi), holbuki forma
+    // o'lchamni ALLAQACHON santimetrda so'raydi. Natijada 23 sm qadoq Excel'da
+    // 2 sm bo'lib chiqardi — WB da bu jarima sababi.
     const { buffer } = fillWbTemplate([toWbRow(base, ['https://a.jpg'])]);
     const { header, row5 } = readItems(buffer);
-    // 320 g → 0.32 kg
     expect(Number(cellByHeader(header, row5, 'Packaging weight (kg)'))).toBeCloseTo(0.32, 3);
-    // 250 mm → 25 sm, 120 → 12, 80 → 8
     expect(Number(cellByHeader(header, row5, 'Package length'))).toBe(25);
     expect(Number(cellByHeader(header, row5, 'Package width'))).toBe(12);
     expect(Number(cellByHeader(header, row5, 'Package height'))).toBe(8);
+  });
+
+  it("jins va davlat WB lug'atiga o'giriladi", () => {
+    // Forma ro'yxati o'zbekcha, WB shabloni ruscha qiymat kutadi
+    const { buffer } = fillWbTemplate([
+      toWbRow({ ...base, gender: 'Erkaklar', country: 'Xitoy' }, ['https://a.jpg']),
+    ]);
+    const { header, row5 } = readItems(buffer);
+    expect(cellByHeader(header, row5, 'Gender')).toBe('Мужской');
+    expect(cellByHeader(header, row5, 'Country of origin')).toBe('Китай');
   });
 
   it('bir necha mahsulot — har biri alohida qatorда', () => {
@@ -101,5 +112,33 @@ describe('WB shabloni to\'ldirish', () => {
     expect(wb.SheetNames).toContain('Manual');
     expect(wb.SheetNames).toContain('Items');
     expect(header.length).toBeGreaterThan(3000);
+  });
+});
+
+/**
+ * WB da har o'lcham — ALOHIDA nomenklatura, o'z barkodi bilan. Hammasi bitta
+ * katakka yozilsa (avval shunday edi) WB bitta variant yasaydi: xaridor
+ * o'lchamni tanlay olmaydi, qoldiq ham o'lchamlar bo'yicha yuritilmaydi.
+ * Kabinetda bu "Seller size: M, L, XL" bo'lib ko'ringan edi.
+ */
+describe("o'lchamlarni ajratish", () => {
+  it('vergul, nuqtali vergul va chiziq bo\'yicha ajratadi', async () => {
+    const { splitSizes } = await import('../services/marketplace/publish.service');
+    expect(splitSizes('M, L, XL')).toEqual(['M', 'L', 'XL']);
+    expect(splitSizes('s;m;l')).toEqual(['S', 'M', 'L']);
+    expect(splitSizes('42/44/46')).toEqual(['42', '44', '46']);
+  });
+
+  it('takrorlarni va bo\'shliqlarni tozalaydi', async () => {
+    const { splitSizes } = await import('../services/marketplace/publish.service');
+    expect(splitSizes(' m , M ,  l ')).toEqual(['M', 'L']);
+    expect(splitSizes('')).toEqual([]);
+    expect(splitSizes('   ')).toEqual([]);
+  });
+
+  it("30 tadan ko'p bo'lsa kesadi (WB chegarasi)", async () => {
+    const { splitSizes } = await import('../services/marketplace/publish.service');
+    const many = Array.from({ length: 40 }, (_, i) => `R${i}`).join(',');
+    expect(splitSizes(many)).toHaveLength(30);
   });
 });

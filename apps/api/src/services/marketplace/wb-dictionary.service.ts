@@ -183,6 +183,21 @@ export async function toWbValue(
   return { value: candidates[0], verified: false };
 }
 
+/**
+ * Tarmoqsiz o'girish — Excel eksporti uchun.
+ *
+ * Excel fayli sinxron quriladi va u yerda WB kalitini so'rash imkoni yo'q.
+ * Shuning uchun statik jadval ishlatiladi: "Erkaklar" -> "Мужской".
+ * WB da mavjud bo'lmagan qiymat ('Unisex') bo'sh qaytariladi — Excel'ga
+ * yaroqsiz qiymat yozib qo'yish sotuvchini yuklashda xatoga olib boradi.
+ */
+export function staticWbValue(uzValue: string): string {
+  const text = String(uzValue ?? '').trim();
+  if (!text) return '';
+  if (WB_UNSUPPORTED.has(norm(text))) return '';
+  return candidatesFor(text)[0] ?? '';
+}
+
 /** Testlar uchun */
 export function clearWbDictionaryCache(): void {
   cache.clear();

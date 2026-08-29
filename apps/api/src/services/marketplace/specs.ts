@@ -597,7 +597,18 @@ const WB: MarketplaceSpec = {
       fields: [
         { key: 'color', label: 'Rang', excelHeader: 'Цвет', type: 'text', required: true, aiFillable: true },
         { key: 'composition', label: 'Tarkib (Состав)', excelHeader: 'Состав', type: 'text', required: true, aiFillable: true, placeholder: 'хлопок 95%, эластан 5%' },
-        { key: 'size', label: "O'lchamlar", excelHeader: 'Размер', type: 'text', required: false, aiFillable: true },
+        {
+          key: 'size',
+          label: "O'lchamlar",
+          excelHeader: 'Размер',
+          type: 'text',
+          required: false,
+          aiFillable: true,
+          placeholder: 'M, L, XL',
+          // Har o'lcham WB da alohida nomenklatura bo'ladi va o'z barkodini
+          // oladi — qoldiq ham har biriga alohida yuritiladi
+          hint: "Vergul bilan yozing — har biri alohida o'lcham bo'ladi va o'z barkodini oladi",
+        },
         { key: 'country', label: 'Ishlab chiqarilgan davlat', excelHeader: 'Страна производства', type: 'select', required: true, options: COUNTRIES, aiFillable: true },
         { key: 'gender', label: 'Jinsi', excelHeader: 'Пол', type: 'select', required: false, options: WB_GENDERS, aiFillable: true },
         { key: 'season', label: 'Mavsum', excelHeader: 'Сезон', type: 'select', required: false, options: SEASONS, aiFillable: true },
@@ -789,6 +800,23 @@ export interface ValidationIssue {
  * `publishRequired` maydonlar (kategoriya ID'lari) ham majburiy bo'ladi.
  * Oddiy saqlash va Excel eksportida ular so'ralmaydi.
  */
+/**
+ * "M, L, XL" ni alohida o'lchamlarga ajratadi.
+ *
+ * WB da har o'lcham — ALOHIDA nomenklatura, o'z barkodi bilan. Hammasini
+ * bitta katakka yozsak (avval shunday edi), WB bitta variant yasaydi va
+ * kabinetda "Seller size: M, L, XL" bo'lib turadi: xaridor o'lchamni tanlay
+ * olmaydi, qoldiq ham o'lchamlar bo'yicha yuritilmaydi.
+ */
+export function splitSizes(raw: string): string[] {
+  return String(raw ?? '')
+    .split(/[,;/]/)
+    .map((part) => part.trim().toUpperCase())
+    .filter(Boolean)
+    .filter((part, i, all) => all.indexOf(part) === i)
+    .slice(0, 30); // WB bitta kartochkada 30 tagacha nomenklatura
+}
+
 export function validateValues(
   spec: MarketplaceSpec,
   values: Record<string, any>,

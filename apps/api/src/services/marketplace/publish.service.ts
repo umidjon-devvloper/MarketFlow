@@ -17,7 +17,7 @@
  * `toApiUnits` uni o'giradi; o'girmasa 1000 barobar xato ketadi.
  */
 
-import { MarketplaceSpec, findField } from './specs';
+import { MarketplaceSpec, findField, splitSizes } from './specs';
 import * as ozon from './ozon-api.service';
 import * as wb from './wb-api.service';
 import * as yandex from './yandex-api.service';
@@ -618,16 +618,45 @@ async function publishWb(
     };
   }
 
+  // Har o'lchamga alohida barkod kerak: WB ularni shu bo'yicha ajratadi va
+  // qoldiq ham har biriga alohida yuritiladi. Birinchisiga mavjud barkod,
+  // qolganlariga WB dan yangisini so'raymiz.
+  const sizeLabels = splitSizes(str(v, 'size'));
+  const barcodes = [barcode];
+  if (sizeLabels.length > 1) {
+    try {
+      const extra = await wb.generateBarcodes(creds.apiKey, sizeLabels.length - 1);
+      barcodes.push(...extra);
+    } catch (err: any) {
+      warnings.push(
+        `Qo'shimcha barkod olinmadi (${err?.message ?? 'xato'}) — faqat "${sizeLabels[0]}" o'lchami joylanadi`,
+      );
+    }
+  }
+
   if (existing?.nmID) {
     const sizes = Array.isArray(existing.sizes) && existing.sizes.length
       ? existing.sizes.map((size: any) => ({
           chrtID: size.chrtID,
-          techSize: size.techSize ?? str(v, 'size') ?? '0',
-          wbSize: size.wbSize ?? '',
+          techSize: size.techSize ?? sizeLabels[0] ?? '0',
+          // wbSize tozalanadi: u "rossiyacha o'lcham" va faqat butun son
+          // bo'lishi kerak. Eski kartochkalarda u yerga harfli o'lcham
+          // yozilib qolgan va kabinet shundan ogohlantirib turadi.
+          wbSize: '',
           // Mavjud barkodlarni saqlaymiz: yangisini qo'ysak eski qoldiq uziladi
           skus: Array.isArray(size.skus) && size.skus.length ? size.skus : [barcode],
         }))
-      : [{ techSize: str(v, 'size') || '0', wbSize: str(v, 'size') || '', skus: [barcode] }];
+      : [{ techSize: sizeLabels[0] || '0', wbSize: '', skus: [barcode] }];
+
+    // Yangi o'lcham qo'shish yangilash so'rovi orqali ishlamaydi — WB uni
+    // alohida nomenklatura sifatida qo'shishni talab qiladi. Sotuvchi buni
+    // bilmasa, o'lcham qo'shib qayta yuboradi-yu, natija o'zgarmaydi.
+    if (sizeLabels.length > sizes.length) {
+      warnings.push(
+        `Kartochkada ${sizes.length} ta o'lcham bor, formada ${sizeLabels.length} ta. ` +
+          `Yangi o'lchamlar yangilash orqali qo'shilmaydi — WB kabinetidan qo'shing yoki yangi kartochka yarating.`,
+      );
+    }
 
     try {
       await wb.updateCards(creds.apiKey, [
@@ -653,6 +682,18 @@ async function publishWb(
         warnings,
         raw: err,
       };
+    }
+
+    // Rasmlarni ham shu yerda biriktiramiz. Yaratishda bu keyinroq, finalize
+    // cron'ida bo'ladi (kartochka WB tomonida hali yo'q), lekin mavjud
+    // kartochkada nmID bor — kutishning hojati yo'q. Aks holda "Qayta
+    // yuborish" bosilaveradi-yu, rasm hech qachon bormasdi.
+    if (input.imageUrls.length) {
+      try {
+        await wb.saveMedia(creds.apiKey, existing.nmID, input.imageUrls);
+      } catch (err: any) {
+        warnings.push(`Rasmlar biriktirilmadi (${err?.message ?? 'xato'}) — keyinroq qayta urinib ko'ring`);
+      }
     }
 
     return {
@@ -681,14 +722,18 @@ async function publishWb(
             weightBrutto: weightKg,
           },
           characteristics,
-          sizes: [
-            {
-              techSize: str(v, 'size') || '0',
-              wbSize: str(v, 'size') || '',
+          // wbSize ATAYLAB bo'sh: u "rossiyacha o'lcham" va WB u yerda faqat
+          // butun son kutadi (44, 46, 48). Harfli o'lchamni yozsak kabinetda
+          // "Add only full numbers in the Russian Size field" ogohlantirishi
+          // chiqadi. Harfli o'lcham techSize ga tushadi.
+          sizes: (sizeLabels.length ? sizeLabels : ['0'])
+            .slice(0, barcodes.length)
+            .map((label, i) => ({
+              techSize: label,
+              wbSize: '',
               price: num(v, 'price'),
-              skus: [barcode],
-            },
-          ],
+              skus: [barcodes[i]],
+            })),
         },
       ],
     },
@@ -956,4 +1001,6 @@ export async function checkPublishStatus(
 
 // Birlik o'girish va nom moslashtirish mantig'i testdan chaqiriladi —
 // bular jimgina noto'g'ri ishlaydigan turdagi kod
+export { splitSizes };
+
 export const __internal = { toApiUnits, normalizeName, vatToOzon, UNIT_FACTORS, wbCm };

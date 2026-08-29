@@ -13,13 +13,15 @@
  */
 
 import fs from 'fs';
+import { staticWbValue } from '../marketplace/wb-dictionary.service';
+import { splitSizes } from '../marketplace/specs';
 import path from 'path';
 import { unzipSync, zipSync } from 'fflate';
 
 const SHEET_PATH = 'xl/worksheets/sheet1.xml';
 const SHARED_PATH = 'xl/sharedStrings.xml';
 
-/** Sarlavha 3-qatorда, ma'lumot 5-qatordан (1 guruh, 2 bo'sh, 3 nom, 4 izoh) */
+/** Sarlavha 3-qatorda, ma'lumot 5-qatordан (1 guruh, 2 bo'sh, 3 nom, 4 izoh) */
 const HEADER_ROW = 3;
 const DATA_START_ROW = 5;
 
@@ -50,16 +52,32 @@ interface ColumnMap {
   transform?: (raw: any) => any;
 }
 
-/** g → kg (WB og'irlikни kilogrammда kutadi) */
+/** g → kg (WB og'irlikni kilogrammda kutadi) */
 const gramsToKg = (raw: any) => {
   const n = Number(String(raw ?? '').replace(',', '.'));
   return Number.isFinite(n) && n > 0 ? Math.round(n) / 1000 : '';
 };
-/** mm → butun sm (WB o'lchamlari butun santimetrда) */
-const mmToCm = (raw: any) => {
+/**
+ * Butun santimetr.
+ *
+ * Avval bu yerda mm → sm o'girish bor edi (10 ga bo'lardi), holbuki formada
+ * o'lcham ALLAQACHON santimetrda so'raladi. Natijada 23 sm qadoq Excel'da
+ * 2 sm bo'lib chiqardi — WB da bu jarima sababi: "ko'rsatilgan o'lcham
+ * haqiqiysidan kichik bo'lsa jarima solinadi".
+ */
+const toCm = (raw: any) => {
   const n = Number(String(raw ?? '').replace(',', '.'));
-  return Number.isFinite(n) && n > 0 ? Math.max(1, Math.round(n / 10)) : '';
+  return Number.isFinite(n) && n > 0 ? Math.max(1, Math.round(n)) : '';
 };
+
+/**
+ * O'zbekcha variantni WB lug'atiga o'girish.
+ *
+ * Forma ro'yxatlari o'zbekcha ("Erkaklar", "Xitoy"), WB shabloni esa ruscha
+ * qiymat kutadi. O'girmasak Excel'da "Erkaklar" bo'lib ketardi va WB uni
+ * yuklashda rad etardi — API yo'lidagi bilan bir xil xato.
+ */
+const toWbDict = (raw: any) => staticWbValue(raw);
 
 const WB_COLUMNS: ColumnMap[] = [
   { header: 'Group', key: '__const__:1', type: 'number' },
@@ -71,23 +89,30 @@ const WB_COLUMNS: ColumnMap[] = [
   // qoladi — o'z brendi bo'lsa sotuvchi Excel ichida yozadi.
   { header: 'Description', key: 'description', type: 'text' },
   { header: 'Photo', key: '__images__', type: 'text' },
-  { header: 'KIZ', key: '__const__:Not needed', type: 'text' },
+  // KIZ ataylab bo'sh: "Not needed" deb yozish huquqiy da'vo bo'lardi, holbuki
+  // ko'p TN VED kodlari markirovkani TALAB qiladi (poloda 40 koddan 38 tasi).
+  // Bo'sh bo'lsa WB o'z qoidasini qo'llaydi.
+  { header: 'KIZ', key: '__const__:', type: 'text' },
   { header: 'Packaging weight (kg)', key: 'weight', type: 'number', transform: gramsToKg },
   { header: 'Color', key: 'color', type: 'text' },
   // Zaxira kalitlar vergul bilan — birinchi to'ldirilgani olinadi
   { header: 'Composition', key: 'composition,material', type: 'text' },
-  { header: 'Gender', key: 'gender', type: 'text' },
+  { header: 'Gender', key: 'gender', type: 'text', transform: toWbDict },
   { header: 'Contents', key: 'contents', type: 'text' },
+  // Kiyim shablonlarida o'lcham ustunlari bor. Bizdagi tayyor shablon
+  // "Игрушки" bo'lgani uchun ular topilmasligi mumkin — u holda mavjud
+  // ogohlantirish mexanizmi ("bu ustun topilmadi") ishlaydi.
+  { header: 'Size', key: '__size__', type: 'text' },
   { header: 'Barcodes', key: 'barcode', type: 'text' },
   { header: 'Price', key: 'price', type: 'number' },
   // QQS ataylab to'ldirilmaydi: WB stavkani kabinet sozlamasidan oladi va
   // kartochka API'sida bunday maydon yo'q. Ustun WB shablonida qoladi —
   // kerak bo'lsa sotuvchi Excel ichida o'zi yozadi.
-  { header: 'Country of origin', key: 'country', type: 'text' },
+  { header: 'Country of origin', key: 'country', type: 'text', transform: toWbDict },
   { header: 'HS code', key: 'tnved,mxik,hsCode', type: 'text' },
-  { header: 'Package height', key: 'packHeight', type: 'number', transform: mmToCm },
-  { header: 'Package length', key: 'packLength', type: 'number', transform: mmToCm },
-  { header: 'Package width', key: 'packWidth', type: 'number', transform: mmToCm },
+  { header: 'Package height', key: 'packHeight', type: 'number', transform: toCm },
+  { header: 'Package length', key: 'packLength', type: 'number', transform: toCm },
+  { header: 'Package width', key: 'packWidth', type: 'number', transform: toCm },
 ];
 
 // ─── Yordamchilar ────────────────────────────────────────
@@ -193,9 +218,48 @@ export function fillWbTemplate(rows: WbExportRow[]): { buffer: Buffer; warnings:
   const cols = headerColumns(xml, shared);
   const warnings: WbExportWarning[] = [];
 
+  // WB da har o'lcham alohida nomenklatura — Excel'da ham alohida QATOR.
+  // Hammasini bitta katakka yozsak ("M, L, XL") WB bitta variant yasaydi:
+  // xaridor o'lchamni tanlay olmaydi, qoldiq ham ajratilmaydi.
+  // Barkod faqat birinchi qatorga: qolganlariga WB o'zi generatsiya qiladi
+  // (bir xil barkodni takrorlash — kartochkani rad ettiradi).
+  const expanded: WbExportRow[] = [];
+  let sawSizes = false;
+  for (const row of rows) {
+    const sizes = splitSizes(String(row.values.size ?? ''));
+    if (sizes.length) sawSizes = true;
+    if (sizes.length <= 1) {
+      expanded.push({ ...row, values: { ...row.values, __size__: sizes[0] ?? '' } });
+      continue;
+    }
+    sizes.forEach((size, i) => {
+      expanded.push({
+        ...row,
+        values: {
+          ...row.values,
+          __size__: size,
+          barcode: i === 0 ? row.values.barcode : '',
+        },
+      });
+    });
+  }
+
+  // Tayyor shablon "Игрушки" uchun — kiyimda o'lcham ustuni yo'q. Sotuvchi
+  // buni bilmasa, o'lchamsiz faylni yuklaydi va WB kartochkani o'lchamsiz
+  // yaratadi. Shuning uchun ochiq aytamiz.
+  if (sawSizes && !cols.has(normHeader('Size'))) {
+    warnings.push({
+      row: DATA_START_ROW,
+      column: 'Size',
+      message:
+        "bu shablonda o'lcham ustuni yo'q (u o'yinchoqlar uchun). Kiyim uchun WB kabinetidan " +
+        'o\'z kategoriyangiz shablonini yuklab oling yoki API orqali joylang — u yerda o\'lchamlar to\'g\'ri ketadi',
+    });
+  }
+
   // Har mahsulot uchun kataklar to'plamini yasaymiz
   const rowXmls: Array<{ num: number; cells: string }> = [];
-  rows.forEach((row, index) => {
+  expanded.forEach((row, index) => {
     const rowNum = DATA_START_ROW + index;
     const cells: string[] = [];
 
@@ -203,7 +267,7 @@ export function fillWbTemplate(rows: WbExportRow[]): { buffer: Buffer; warnings:
       const col = cols.get(normHeader(map.header));
       if (!col) {
         if (index === 0) {
-          warnings.push({ row: rowNum, column: map.header, message: 'shablonда bu ustun topilmadi — o\'tkazib yuborildi' });
+          warnings.push({ row: rowNum, column: map.header, message: 'shablonda bu ustun topilmadi — o\'tkazib yuborildi' });
         }
         continue;
       }
