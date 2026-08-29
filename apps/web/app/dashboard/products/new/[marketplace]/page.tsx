@@ -51,6 +51,9 @@ interface SpecField {
   options?: string[];
   placeholder?: string;
   hint?: string;
+  /** Qiymat shakli (regex) — masalan TN VED uchun 10 ta raqam */
+  pattern?: string;
+  patternHint?: string;
   aiFillable?: boolean;
   mapsTo?: string;
   /** Formada ko'rsatilmaydi — kategoriya tanlagichi to'ldiradi */
@@ -276,6 +279,12 @@ export default function NewCardPage() {
       }
       if (field.maxLength && raw.length > field.maxLength) {
         errors[field.key] = `${field.maxLength} belgidan oshdi (${raw.length})`;
+        continue;
+      }
+      // Marketplace formatni qat'iy tekshiradigan maydonlar (TN VED kabi):
+      // noto'g'ri qiymat kartochkani kabinetda qizil xatoga aylantiradi
+      if (field.pattern && !new RegExp(field.pattern).test(raw)) {
+        errors[field.key] = field.patternHint || "Format noto'g'ri";
       }
     }
     return errors;

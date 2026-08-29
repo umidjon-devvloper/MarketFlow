@@ -22,6 +22,7 @@ import * as ozon from './ozon-api.service';
 import * as wb from './wb-api.service';
 import * as yandex from './yandex-api.service';
 import { charcKey, isCoveredCharc } from './categories.service';
+import { toWbValue, WbDirectory } from './wb-dictionary.service';
 
 export interface PublishInput {
   values: Record<string, any>;
@@ -343,6 +344,16 @@ async function publishOzon(
 // ============================================
 
 /** Bizdagi maydon → WB xarakteristikasi nomi (ID'lar predmetga qarab o'zgaradi) */
+/**
+ * Bu maydonlarning qiymati WB lug'atidan bo'lishi shart. Formadagi ro'yxat
+ * o'zbekcha, WB esa ruscha nomni kutadi — o'girmasak kabinetda qizil xato.
+ */
+const WB_DICTIONARY_FIELDS: Record<string, WbDirectory> = {
+  gender: 'kinds',
+  season: 'seasons',
+  country: 'countries',
+};
+
 const WB_CHARC_NAMES: Record<string, string[]> = {
   color: ['цвет'],
   composition: ['состав'],
@@ -385,11 +396,19 @@ async function buildWbCharacteristics(
 
   const out: any[] = [];
   for (const [key, candidates] of Object.entries(WB_CHARC_NAMES)) {
-    const text = str(values, key);
+    let text = str(values, key);
     if (!text) continue;
 
     const charc = candidates.map((c) => byName.get(normalizeName(c))).find(Boolean);
     if (!charc) continue;
+
+    // Lug'atli maydon bo'lsa — WB ning o'z qiymatiga o'giramiz
+    const directory = WB_DICTIONARY_FIELDS[key];
+    if (directory) {
+      const mapped = await toWbValue(apiKey, directory, text);
+      text = mapped.value;
+      if (mapped.note) warnings.push(mapped.note);
+    }
 
     // WB son tipidagi xarakteristikani massiv emas, son sifatida kutadi
     const isNumber = charc.charcType === 4;
@@ -537,9 +556,19 @@ async function publishWb(
     };
   }
 
+  // Shu vendorCode bilan kartochka allaqachon bormi. Bor bo'lsa — YANGILAYMIZ:
+  // upload ikkinchi marta yuborilsa WB "bunday artikul bor" deb rad etadi, ya'ni
+  // kabinetdagi xatoni (jins, TN VED, brend) tuzatib qayta yuborib bo'lmasdi.
+  const existing = await wb.findCardByVendorCode(creds.apiKey, vendorCode).catch(() => null);
+  const existingSkus: string[] = Array.isArray(existing?.sizes)
+    ? existing.sizes.flatMap((size: any) => (Array.isArray(size?.skus) ? size.skus : []))
+    : [];
+
   // WB barkodsiz kartochkani qabul qilmaydi. Sotuvchida ko'pincha barkod
   // bo'lmaydi — shunda WB'ning o'zidan so'raymiz va buni aytib qo'yamiz.
-  let barcode = str(v, 'barcode');
+  // Mavjud kartochkada barkod bor bo'lsa yangisi so'ralmaydi: keraksiz
+  // barkod yaratish ham chaqiruvni, ham WB dagi ro'yxatni ifloslantiradi.
+  let barcode = str(v, 'barcode') || existingSkus[0] || '';
   if (!barcode) {
     try {
       const [generated] = await wb.generateBarcodes(creds.apiKey, 1);
@@ -558,6 +587,52 @@ async function publishWb(
         'WB kartochkasi barkodsiz qabul qilinmaydi. Barkod maydonini to\'ldiring yoki ' +
         'token\'da "Kontent" ruxsati borligini tekshiring.',
       warnings,
+    };
+  }
+
+  if (existing?.nmID) {
+    const sizes = Array.isArray(existing.sizes) && existing.sizes.length
+      ? existing.sizes.map((size: any) => ({
+          chrtID: size.chrtID,
+          techSize: size.techSize ?? str(v, 'size') ?? '0',
+          wbSize: size.wbSize ?? '',
+          // Mavjud barkodlarni saqlaymiz: yangisini qo'ysak eski qoldiq uziladi
+          skus: Array.isArray(size.skus) && size.skus.length ? size.skus : [barcode],
+        }))
+      : [{ techSize: str(v, 'size') || '0', wbSize: str(v, 'size') || '', skus: [barcode] }];
+
+    try {
+      await wb.updateCards(creds.apiKey, [
+        {
+          nmID: existing.nmID,
+          vendorCode,
+          brand: str(v, 'brand'),
+          title: str(v, 'title'),
+          description: str(v, 'description'),
+          dimensions: {
+            length: wbCm(toApiUnits(spec, v, 'packLength', 'sm')),
+            width: wbCm(toApiUnits(spec, v, 'packWidth', 'sm')),
+            height: wbCm(toApiUnits(spec, v, 'packHeight', 'sm')),
+            weightBrutto: weightKg,
+          },
+          characteristics,
+          sizes,
+        },
+      ]);
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `Wildberries kartochkani yangilamadi: ${err?.message || err}`,
+        warnings,
+        raw: err,
+      };
+    }
+
+    return {
+      success: true,
+      message: `Kartochka yangilandi (nmID ${existing.nmID}). WB o'zgarishni bir necha daqiqada qabul qiladi.`,
+      warnings,
+      raw: { nmID: existing.nmID },
     };
   }
 

@@ -463,6 +463,27 @@ export async function getSubjectCharcs(
 }
 
 /**
+ * GET /content/v2/directory/{name} — WB ma'lumotnomalari.
+ *
+ * Jinsi (kinds), mavsum (seasons), davlat (countries), rang (colors) —
+ * bularning qiymatlari WB lug'atidan olinishi kerak. O'z so'zimizni
+ * yuborsak kartochka yaratiladi, lekin kabinetda katak qizil bo'lib
+ * qoladi va tovar sotuvga chiqmaydi.
+ */
+export async function getDirectory(
+  apiKey: string,
+  name: 'kinds' | 'seasons' | 'countries' | 'colors',
+  locale = 'ru',
+): Promise<unknown[]> {
+  const data = await wbFetch<any>(
+    apiKey,
+    `${WB_CONTENT}/content/v2/directory/${name}?locale=${locale}`,
+    { bucket: 'cards' },
+  );
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+/**
  * POST /content/v2/barcodes — WB tomonidan barkod generatsiyasi.
  *
  * `sizes[].skus` bo'sh bo'lsa WB kartochkani qabul qilmaydi, sotuvchida esa
@@ -516,14 +537,19 @@ export async function getCardErrors(
   return Array.isArray(data?.data) ? data.data : [];
 }
 
-/** vendorCode bo'yicha yangi yaratilgan kartochkaning nmID sini topish */
+/**
+ * vendorCode bo'yicha kartochkani topish.
+ *
+ * To'liq obyekt qaytariladi: yangilash uchun nmID dan tashqari mavjud
+ * o'lchamlar (chrtID va barkodlar) ham kerak — WB yangilashda o'lchamni
+ * aynan chrtID bo'yicha topadi.
+ */
 export async function findCardByVendorCode(
   apiKey: string,
   vendorCode: string,
-): Promise<{ nmID?: number; imtID?: number } | null> {
+): Promise<any | null> {
   const { cards } = await getCards(apiKey, { size: 100 });
-  const hit = cards.find((c: any) => c?.vendorCode === vendorCode);
-  return hit ? { nmID: hit.nmID, imtID: hit.imtID } : null;
+  return cards.find((c: any) => c?.vendorCode === vendorCode) ?? null;
 }
 
 /**
@@ -535,6 +561,23 @@ export async function findCardByVendorCode(
  */
 export function uploadCards(apiKey: string, body: unknown): Promise<any> {
   return wbFetch(apiKey, `${WB_CONTENT}/content/v2/cards/upload`, {
+    method: 'POST',
+    body,
+    bucket: 'cards',
+  });
+}
+
+/**
+ * POST /content/v2/cards/update — MAVJUD kartochkani yangilash.
+ *
+ * upload dan farqi: upload faqat yangi kartochka yaratadi va o'sha
+ * vendorCode bilan ikkinchi marta yuborilsa rad etadi. Kabinetdagi xatoni
+ * (noto'g'ri jins, TN VED va h.k.) tuzatish uchun aynan shu chaqiruv kerak.
+ *
+ * Har bir kartochkada nmID va mavjud o'lchamlar (chrtID) bo'lishi shart.
+ */
+export function updateCards(apiKey: string, body: unknown): Promise<any> {
+  return wbFetch(apiKey, `${WB_CONTENT}/content/v2/cards/update`, {
     method: 'POST',
     body,
     bucket: 'cards',

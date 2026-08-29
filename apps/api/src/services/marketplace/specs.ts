@@ -47,6 +47,14 @@ export interface SpecField {
   options?: string[];
   placeholder?: string;
   hint?: string;
+  /**
+   * Qiymat shakli (regex manbasi). Marketplace formatni qat'iy tekshiradigan
+   * maydonlar uchun: noto'g'ri qiymat kartochkani rad ettiradi yoki WB
+   * kabinetida qizil xato bo'lib qoladi.
+   */
+  pattern?: string;
+  /** Xato chiqqanda ko'rsatiladigan tushuntirish */
+  patternHint?: string;
   /** AI rasmga qarab to'ldira oladimi */
   aiFillable?: boolean;
   /**
@@ -550,7 +558,19 @@ const WB: MarketplaceSpec = {
         { key: 'categoryId', label: 'subjectID', excelHeader: '', type: 'text', required: false, publishRequired: true, hidden: true },
         { key: 'sku', label: 'Sotuvchi artikuli', excelHeader: 'Артикул продавца', type: 'text', required: true, mapsTo: 'sku' },
         { key: 'title', label: 'Nomi (Наименование)', excelHeader: 'Наименование', type: 'text', required: true, maxLength: 60, mapsTo: 'title', aiFillable: true, hint: 'WB da atigi 60 belgi!' },
-        { key: 'brand', label: 'Brend', excelHeader: 'Бренд', type: 'text', required: true, mapsTo: 'brand', aiFillable: true },
+        {
+          key: 'brand',
+          label: 'Brend',
+          excelHeader: 'Бренд',
+          type: 'text',
+          required: true,
+          mapsTo: 'brand',
+          aiFillable: true,
+          // WB brendni o'z ro'yxatidan tekshiradi. Ro'yxatda yo'q brend bilan
+          // kartochka yaratiladi, lekin kabinetda qizil xato bo'lib qoladi va
+          // sotuvga chiqmaydi — buni API qaytarmaydi, faqat kabinetda ko'rinadi.
+          hint: "WB'da ro'yxatdan o'tgan brend bo'lishi kerak — yo'q brend kabinetda xato beradi",
+        },
         { key: 'description', label: 'Tavsif', excelHeader: 'Описание', type: 'textarea', required: true, maxLength: 5000, mapsTo: 'description', aiFillable: true, hint: 'WB qidiruvi tavsifdagi kalit soʻzlarga sezgir' },
         { key: 'barcode', label: 'Barkod', excelHeader: 'Баркод', type: 'text', required: false, mapsTo: 'barcode', hint: "Bo'sh bo'lsa WB generatsiya qiladi" },
       ],
@@ -575,7 +595,18 @@ const WB: MarketplaceSpec = {
         { key: 'gender', label: 'Jinsi', excelHeader: 'Пол', type: 'select', required: false, options: GENDERS, aiFillable: true },
         { key: 'season', label: 'Mavsum', excelHeader: 'Сезон', type: 'select', required: false, options: SEASONS, aiFillable: true },
         { key: 'contents', label: 'Komplektatsiya', excelHeader: 'Комплектация', type: 'text', required: false, aiFillable: true, placeholder: 'ko\'ylak 1 dona' },
-        { key: 'tnved', label: 'TN VED kodi', excelHeader: 'ТНВЭД', type: 'text', required: false, hint: 'AI topa olmaydi — bojxona kodi' },
+        {
+          key: 'tnved',
+          label: 'TN VED kodi',
+          excelHeader: 'ТНВЭД',
+          type: 'text',
+          required: false,
+          hint: 'AI topa olmaydi — bojxona kodi, 10 ta raqam',
+          // WB kodni qat'iy tekshiradi: harf yoki noto'g'ri uzunlik bo'lsa
+          // kartochka kabinetda qizil xato bilan qoladi va sotuvga chiqmaydi
+          pattern: '^\\d{10}$',
+          patternHint: "TN VED — 10 ta raqam (masalan 6109100000). Harf va belgi bo'lmaydi",
+        },
       ],
     },
     {
@@ -800,6 +831,13 @@ export function validateValues(
         key: field.key,
         label: field.label,
         message: `Ruxsat etilgan qiymatlardan tanlang`,
+      });
+    }
+    if (field.pattern && !new RegExp(field.pattern).test(text.trim())) {
+      issues.push({
+        key: field.key,
+        label: field.label,
+        message: field.patternHint || "Format noto'g'ri",
       });
     }
   }
