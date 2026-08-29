@@ -154,7 +154,6 @@ function requireCategoryId(values: Record<string, any>, spec: MarketplaceSpec): 
  * mos keladigani topiladi.
  */
 const OZON_ATTRIBUTE_NAMES: Record<string, string[]> = {
-  brand: ['бренд'],
   color: ['цвет товара', 'цвет'],
   material: ['материал'],
   country: ['страна изготовитель', 'страна производства'],
@@ -354,6 +353,14 @@ const WB_DICTIONARY_FIELDS: Record<string, WbDirectory> = {
   country: 'countries',
 };
 
+/**
+ * Formadagi qat'iy maydon → WB xarakteristikasi nomi.
+ *
+ * Brend bu ro'yxatda YO'Q va WB so'roviga ham qo'shilmaydi: u majburiy emas,
+ * WB esa faqat sotuvchi huquqiga ega bo'lgan, ro'yxatdan o'tgan brendni
+ * qabul qiladi. Rasmdan taxmin qilingan har bir qiymat ("hh", "Polo",
+ * "PULL&BEAR") rad etilgan. Brendsiz kartochka muammosiz ishlaydi.
+ */
 const WB_CHARC_NAMES: Record<string, string[]> = {
   color: ['цвет'],
   composition: ['состав'],
@@ -625,9 +632,6 @@ async function publishWb(
         {
           nmID: existing.nmID,
           vendorCode,
-          // Brend bo'sh bo'lsa maydonni yubormaymiz — mavjud kartochkada
-          // brend bo'lsa u saqlanadi, bo'lmasa brendsiz qoladi
-          ...(str(v, 'brand') ? { brand: str(v, 'brand') } : {}),
           title: str(v, 'title'),
           description: str(v, 'description'),
           dimensions: {
@@ -665,9 +669,6 @@ async function publishWb(
           vendorCode,
           title: str(v, 'title'),
           description: str(v, 'description'),
-          // Brend ixtiyoriy: bo'sh satr yubormaymiz, maydonni umuman
-          // qo'shmaymiz — WB brendsiz kartochkani muammosiz qabul qiladi
-          ...(str(v, 'brand') ? { brand: str(v, 'brand') } : {}),
           // WB o'lchamni sm (BUTUN son), og'irlikni KILOGRAMM da kutadi.
           // Spec grammda so'raydi (shablon shunday) — o'girmasak 1000 barobar xato.
           // Uzunlik/en/balandlik butunga yaxlitlanadi (kasr → 400), og'irlik kasr bo'la oladi.

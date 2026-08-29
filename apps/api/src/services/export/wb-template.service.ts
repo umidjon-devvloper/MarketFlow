@@ -66,7 +66,9 @@ const WB_COLUMNS: ColumnMap[] = [
   { header: "Seller`s article", key: 'sku', type: 'text' },
   { header: 'Name', key: 'title', type: 'text' },
   { header: 'Subject', key: 'category', type: 'text' },
-  { header: 'Brand', key: 'brand', type: 'text' },
+  // Brend ataylab to'ldirilmaydi: majburiy emas va WB faqat sotuvchi
+  // huquqiga ega ro'yxatdan o'tgan brendni qabul qiladi. Ustun shablonda
+  // qoladi — o'z brendi bo'lsa sotuvchi Excel ichida yozadi.
   { header: 'Description', key: 'description', type: 'text' },
   { header: 'Photo', key: '__images__', type: 'text' },
   { header: 'KIZ', key: '__const__:Not needed', type: 'text' },
@@ -78,7 +80,9 @@ const WB_COLUMNS: ColumnMap[] = [
   { header: 'Contents', key: 'contents', type: 'text' },
   { header: 'Barcodes', key: 'barcode', type: 'text' },
   { header: 'Price', key: 'price', type: 'number' },
-  { header: 'VAT rate', key: 'vat', type: 'text' },
+  // QQS ataylab to'ldirilmaydi: WB stavkani kabinet sozlamasidan oladi va
+  // kartochka API'sida bunday maydon yo'q. Ustun WB shablonida qoladi —
+  // kerak bo'lsa sotuvchi Excel ichida o'zi yozadi.
   { header: 'Country of origin', key: 'country', type: 'text' },
   { header: 'HS code', key: 'tnved,mxik,hsCode', type: 'text' },
   { header: 'Package height', key: 'packHeight', type: 'number', transform: mmToCm },

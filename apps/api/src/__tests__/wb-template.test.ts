@@ -57,11 +57,21 @@ describe('WB shabloni to\'ldirish', () => {
     expect(cellByHeader(header, row5, "Seller`s article")).toBe('TOY-001');
     expect(cellByHeader(header, row5, 'Name')).toBe('Самолет игрушечный');
     expect(cellByHeader(header, row5, 'Subject')).toBe('Самолеты и вертолеты');
-    expect(cellByHeader(header, row5, 'Brand')).toBe('pilot');
     expect(cellByHeader(header, row5, 'Barcodes')).toBe('4600000000017');
     expect(Number(cellByHeader(header, row5, 'Price'))).toBe(15000);
     // Photo — ';' bilan ajratilgan
     expect(cellByHeader(header, row5, 'Photo')).toBe('https://a.jpg;https://b.jpg');
+  });
+
+  it('brend va QQS ustunlari ataylab bo\'sh qoladi', () => {
+    // WB brendni faqat sotuvchi huquqiga ega, ro'yxatdan o'tgan holda qabul
+    // qiladi va u majburiy emas; QQS esa kartochka API'sida umuman yo'q —
+    // WB stavkani kabinet sozlamasidan oladi. Ikkalasini to'ldirish
+    // sotuvchini kabinetda qizil xatoga olib borardi.
+    const { buffer } = fillWbTemplate([toWbRow(base, ['https://a.jpg'])]);
+    const { header, row5 } = readItems(buffer);
+    expect(cellByHeader(header, row5, 'Brand')).toBe('');
+    expect(cellByHeader(header, row5, 'VAT rate')).toBe('');
   });
 
   it('og\'irlik grammdan kg ga, o\'lcham mm dan butun sm ga o\'giriladi', () => {

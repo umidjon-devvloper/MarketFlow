@@ -936,7 +936,9 @@ export default function NewCardPage() {
                 <div className="min-w-0">
                   <p className="font-semibold text-lg truncate">{values.title || 'Nomsiz'}</p>
                   <p className="text-sm text-muted mt-1">
-                    {values.brand} {values.category ? `· ${values.category}` : ''}
+                    {/* Brend hamma marketplace'da ham bo'lavermaydi (WB da olib
+                        tashlangan) — bo'sh bo'lsa ortiqcha nuqta chiqmasin */}
+                    {[values.brand, values.category].filter(Boolean).join(' · ')}
                   </p>
                   <p className="text-xl font-bold mt-2">
                     {values.price ? Number(values.price).toLocaleString('uz-UZ') : '—'} {spec.currency}

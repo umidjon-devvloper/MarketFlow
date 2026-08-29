@@ -563,21 +563,6 @@ const WB: MarketplaceSpec = {
         { key: 'categoryId', label: 'subjectID', excelHeader: '', type: 'text', required: false, publishRequired: true, hidden: true },
         { key: 'sku', label: 'Sotuvchi artikuli', excelHeader: 'Артикул продавца', type: 'text', required: true, mapsTo: 'sku' },
         { key: 'title', label: 'Nomi (Наименование)', excelHeader: 'Наименование', type: 'text', required: true, maxLength: 60, mapsTo: 'title', aiFillable: true, hint: 'WB da atigi 60 belgi!' },
-        {
-          key: 'brand',
-          label: 'Brend',
-          excelHeader: 'Бренд',
-          type: 'text',
-          // MAJBURIY EMAS. WB brendni o'z ro'yxatidan tekshiradi va begona
-          // savdo belgisini (PULL&BEAR, Polo) ruxsatsiz qabul qilmaydi —
-          // kartochka yaratiladi, lekin kabinetda qizil xato bo'lib qoladi.
-          // Bo'sh brend bilan kartochka muammosiz ishlaydi (akkauntdagi
-          // mavjud kartochkalarda brand="" — tekshirilgan).
-          required: false,
-          mapsTo: 'brand',
-          aiFillable: true,
-          hint: "Bo'sh qoldirsangiz WB brendsiz joylaydi. Yozsangiz — o'zingizga tegishli va WB'da ro'yxatdan o'tgan brend bo'lsin",
-        },
         { key: 'description', label: 'Tavsif', excelHeader: 'Описание', type: 'textarea', required: true, maxLength: 5000, mapsTo: 'description', aiFillable: true, hint: 'WB qidiruvi tavsifdagi kalit soʻzlarga sezgir' },
         { key: 'barcode', label: 'Barkod', excelHeader: 'Баркод', type: 'text', required: false, mapsTo: 'barcode', hint: "Bo'sh bo'lsa WB generatsiya qiladi" },
       ],
@@ -585,21 +570,15 @@ const WB: MarketplaceSpec = {
     {
       key: 'price',
       label: 'Narx va zaxira',
+      // QQS bu yerda yo'q: WB kartochka API'sida bunday maydon umuman yo'q,
+      // stavkani WB kabinet sozlamasidan oladi. Formada turgani sotuvchini
+      // chalg'itardi — kabinetdagi "VAT rate" xatosini shu yerdan tuzatmoqchi
+      // bo'lardi. Brend ham olib tashlandi: majburiy emas va rasmdan
+      // taxmin qilingan har bir qiymat ("hh", "Polo", "PULL&BEAR") WB
+      // tomonidan rad etilgan.
       fields: [
         { key: 'price', label: 'Narx', excelHeader: 'Цена, руб.', type: 'number', required: true, min: 1, unit: 'RUB', mapsTo: 'basePrice' },
         { key: 'stock', label: 'Zaxira', excelHeader: 'Остаток', type: 'number', required: true, min: 0, mapsTo: 'stock' },
-        {
-          key: 'vat',
-          label: 'QQS stavkasi',
-          excelHeader: 'Ставка НДС',
-          type: 'select',
-          required: true,
-          options: ['0%', '10%', '20%'],
-          // WB kartochka API'sida QQS maydoni yo'q — bu qiymat faqat Excel
-          // shabloniga tushadi. Sotuvchi buni bilmasa, kabinetdagi "VAT rate"
-          // xatosini shu yerdan tuzatmoqchi bo'lib vaqt yo'qotadi.
-          hint: "Faqat Excel shabloni uchun — API orqali joylashda WB buni kabinet sozlamasidan oladi",
-        },
       ],
     },
     {
