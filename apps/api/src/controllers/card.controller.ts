@@ -28,6 +28,7 @@ import { adaptImageToSpec } from '../services/image/adapt.service';
 import { storeImage, hasCloudStorage } from '../services/image/storage';
 import { fillFieldsFromImages } from '../services/ai/vision.service';
 import { suggestPrice } from '../services/ai/price-advisor.service';
+import { matchCategory, chooseTnved } from '../services/ai/category-match.service';
 import {
   assertAiQuota,
   recordAiJob,
@@ -267,6 +268,65 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
         charcsFilled: Object.keys(result.charcValues).length,
       },
     });
+
+    // AI kategoriya NOMINI aytadi, joylash uchun esa katalog ID kerak.
+    // Sotuvchi uni qo'lda qidirishi shart edi — bir bosishda to'ldirish shu
+    // yerda uzilardi. Nomni katalogga bog'lab, ID ni ham qaytaramiz.
+    if (result.values.category && !body.categoryId && spec.id !== 'UZUM') {
+      const cred = await prisma.userMarketplace.findFirst({
+        where: { organizationId, marketplace: spec.id as Marketplace, isActive: true },
+      });
+      if (cred) {
+        try {
+          const options = await searchCategories(
+            spec.id,
+            {
+              apiKey: decrypt(cred.apiKey),
+              apiSecret: cred.apiSecret ? decrypt(cred.apiSecret) : null,
+              shopId: cred.shopId,
+            },
+            { query: result.values.category, limit: 30 },
+          );
+          const matched = await matchCategory(
+            result.values.title || result.values.category,
+            result.values.category,
+            options,
+          );
+          if (matched) {
+            result.values.category = matched.option.name;
+            result.values.categoryId = matched.option.id;
+            if (!matched.exact) {
+              result.notes.push(
+                `Kategoriya katalogdan tanlandi: "${matched.option.name}" — to'g'ri emasmi, o'zgartiring`,
+              );
+            }
+
+            // Kategoriya endi ma'lum — TN VED ro'yxati ham shu bosishda
+            // olinadi. Aks holda sotuvchi tugmani ikkinchi marta bosishi
+            // kerak bo'lardi: birinchi bosishda kategoriya hali yo'q edi.
+            if (spec.id === 'WB' && !result.values.tnved) {
+              const codes = await getWbTnved(decrypt(cred.apiKey), matched.option.id).catch(() => []);
+              const picked = await chooseTnved(
+                `Mahsulot: ${result.values.title || ''}. Tarkib: ${result.values.composition || "ko'rsatilmagan"}. Jinsi: ${result.values.gender || "ko'rsatilmagan"}. Kategoriya: ${matched.option.name}.`,
+                codes.map((c) => c.tnved),
+              );
+              if (picked) {
+                result.values.tnved = picked;
+                result.notes.push(
+                  `TN VED kodini AI tanladi (${picked}) — bojxona uchun tekshirib qo'ying`,
+                );
+              }
+            }
+          } else {
+            result.notes.push(
+              `"${result.values.category}" katalogdan topilmadi — kategoriyani o'zingiz tanlang`,
+            );
+          }
+        } catch {
+          // Katalog o'qilmadi (kalit yoki limit) — nom qoladi, sotuvchi tanlaydi
+        }
+      }
+    }
 
     const quota = await getQuotaStatus(organizationId);
     res.json({ ...result, quota });

@@ -422,6 +422,14 @@ export default function NewCardPage() {
         for (const [key, value] of Object.entries(data.values as Record<string, string>)) {
           if (!(next[key] ?? '').toString().trim()) next[key] = value;
         }
+        // Kategoriya nomi va ID — ajralmas juftlik. Server ID qaytargan
+        // bo'lsa (ya'ni oldin tanlanmagan edi), nomni ham katalogdagi nomga
+        // almashtiramiz: aks holda "Футболки" nomi 219 (Футболки-поло) ID si
+        // bilan qolib, sotuvchi nima joylanayotganini tushunmaydi.
+        if (data.values?.categoryId) {
+          next.categoryId = data.values.categoryId;
+          if (data.values.category) next.category = data.values.category;
+        }
         return next;
       });
 
