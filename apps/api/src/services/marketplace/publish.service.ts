@@ -21,7 +21,7 @@ import { MarketplaceSpec, findField } from './specs';
 import * as ozon from './ozon-api.service';
 import * as wb from './wb-api.service';
 import * as yandex from './yandex-api.service';
-import { charcKey, isCoveredCharc } from './categories.service';
+import { charcKey, isCoveredCharc, getWbTnved } from './categories.service';
 import { toWbValue, WbDirectory } from './wb-dictionary.service';
 
 export interface PublishInput {
@@ -556,6 +556,25 @@ async function publishWb(
     };
   }
 
+  // TN VED predmetga bog'liq: polo uchun to'g'ri kod sarafan predmetida
+  // qabul qilinmaydi. WB buni "Invalid HS code" deb kabinetda ko'rsatadi,
+  // API esa kartochkani qabul qilgandek javob beradi — shuning uchun
+  // yuborishdan oldin o'zimiz tekshiramiz.
+  const tnved = str(v, 'tnved');
+  if (tnved) {
+    const allowed = await getWbTnved(creds.apiKey, subjectId).catch(() => []);
+    if (allowed.length && !allowed.some((item) => item.tnved === tnved)) {
+      return {
+        success: false,
+        message:
+          `TN VED "${tnved}" bu kategoriyaga mos emas. WB shu predmet uchun ` +
+          `boshqa kodlarni kutadi (masalan ${allowed.slice(0, 3).map((i) => i.tnved).join(', ')}). ` +
+          `Kategoriya to'g'ri tanlanganini ham tekshiring.`,
+        warnings,
+      };
+    }
+  }
+
   // Shu vendorCode bilan kartochka allaqachon bormi. Bor bo'lsa — YANGILAYMIZ:
   // upload ikkinchi marta yuborilsa WB "bunday artikul bor" deb rad etadi, ya'ni
   // kabinetdagi xatoni (jins, TN VED, brend) tuzatib qayta yuborib bo'lmasdi.
@@ -606,7 +625,9 @@ async function publishWb(
         {
           nmID: existing.nmID,
           vendorCode,
-          brand: str(v, 'brand'),
+          // Brend bo'sh bo'lsa maydonni yubormaymiz — mavjud kartochkada
+          // brend bo'lsa u saqlanadi, bo'lmasa brendsiz qoladi
+          ...(str(v, 'brand') ? { brand: str(v, 'brand') } : {}),
           title: str(v, 'title'),
           description: str(v, 'description'),
           dimensions: {
@@ -644,7 +665,9 @@ async function publishWb(
           vendorCode,
           title: str(v, 'title'),
           description: str(v, 'description'),
-          brand: str(v, 'brand'),
+          // Brend ixtiyoriy: bo'sh satr yubormaymiz, maydonni umuman
+          // qo'shmaymiz — WB brendsiz kartochkani muammosiz qabul qiladi
+          ...(str(v, 'brand') ? { brand: str(v, 'brand') } : {}),
           // WB o'lchamni sm (BUTUN son), og'irlikni KILOGRAMM da kutadi.
           // Spec grammda so'raydi (shablon shunday) — o'girmasak 1000 barobar xato.
           // Uzunlik/en/balandlik butunga yaxlitlanadi (kasr → 400), og'irlik kasr bo'la oladi.

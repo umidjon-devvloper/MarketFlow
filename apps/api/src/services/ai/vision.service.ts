@@ -462,13 +462,22 @@ export async function fillFieldsFromImages(
   allCharcs: CharcSpec[] = [],
   /** 'charcs' — faqat kategoriya xususiyatlari (o'sha bo'limdagi tugma uchun) */
   scope: 'all' | 'charcs' = 'all',
+  /**
+   * Kategoriyaga bog'liq variantlar (maydon kaliti → ruxsat etilgan qiymatlar).
+   * TN VED shunday: ro'yxat spec'da yo'q, WB dan predmetga qarab keladi.
+   * Ro'yxat berilsa AI erkin yozmaydi — faqat shundan tanlaydi.
+   */
+  dynamicOptions: Record<string, string[]> = {},
 ): Promise<VisionFillResult> {
   if (!imageUrls.length) throw new Error('Kamida bitta rasm kerak');
   if (scope === 'charcs' && !allCharcs.length) {
     throw new Error("Bu kategoriyada to'ldiriladigan xususiyat yo'q");
   }
 
-  const fields = scope === 'charcs' ? [] : fillableFields(spec);
+  const fields = (scope === 'charcs' ? [] : fillableFields(spec)).map((field) => {
+    const options = dynamicOptions[field.key];
+    return options?.length ? { ...field, options } : field;
+  });
 
   // Majburiy → ommabop → qolgani tartibida, chegaragacha
   const ordered = [...allCharcs].sort((a, b) => {
@@ -509,6 +518,13 @@ export async function fillFieldsFromImages(
   const charcPart = parsed.charcs && typeof parsed.charcs === 'object' ? parsed.charcs : {};
 
   const { values, notes } = sanitize(fields, fieldPart);
+
+  // Bojxona kodi — sotuvchining javobgarligi. AI faqat WB ruxsat etgan
+  // ro'yxatdan tanlaydi, ya'ni kartochka rad etilmaydi; lekin ro'yxat ichida
+  // qaysi kod aynan to'g'ri ekani tovar tarkibiga bog'liq.
+  if (dynamicOptions.tnved?.length && values.tnved) {
+    notes.push(`TN VED kodini AI tanladi (${values.tnved}) — bojxona uchun tekshirib qo'ying`);
+  }
   const { charcValues, notes: charcNotes } = sanitizeCharcs(charcs, charcPart);
 
   if (allCharcs.length > charcs.length) {

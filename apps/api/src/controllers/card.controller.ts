@@ -45,6 +45,7 @@ import {
 import {
   searchCategories,
   getWbCharacteristics,
+  getWbTnved,
   CategoryError,
 } from '../services/marketplace/categories.service';
 import {
@@ -212,6 +213,8 @@ const aiFillSchema = z.object({
    * alohida tugma uchun: asosiy maydonlarni qayta so'rash ortiqcha token.
    */
   scope: z.enum(['all', 'charcs']).default('all'),
+  /** Tanlangan kategoriya ID — TN VED ro'yxati shunga bog'liq */
+  categoryId: z.string().optional(),
 });
 
 export async function aiFill(req: Request, res: Response, next: NextFunction) {
@@ -225,12 +228,27 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
 
     await assertAiQuota(organizationId);
 
+    // TN VED ro'yxati spec'da yo'q — WB dan predmetga qarab keladi. Ro'yxatni
+    // AI ga bersak, u erkin kod yozmaydi (bojxona kodini o'ylab topib bo'lmaydi),
+    // faqat shu kategoriyaga ruxsat etilganlaridan birini tanlaydi.
+    const dynamicOptions: Record<string, string[]> = {};
+    if (spec.id === 'WB' && body.categoryId && body.scope === 'all') {
+      const cred = await prisma.userMarketplace.findFirst({
+        where: { organizationId, marketplace: spec.id as Marketplace, isActive: true },
+      });
+      if (cred) {
+        const codes = await getWbTnved(decrypt(cred.apiKey), body.categoryId).catch(() => []);
+        if (codes.length) dynamicOptions.tnved = codes.map((c) => c.tnved);
+      }
+    }
+
     const result = await fillFieldsFromImages(
       body.imageUrls,
       spec,
       body.hints,
       body.charcs,
       body.scope,
+      dynamicOptions,
     );
 
     await recordAiJob({
@@ -1023,6 +1041,42 @@ export async function listCategories(req: Request, res: Response, next: NextFunc
  * Tanlangan kategoriya (subjectID) uchun dinamik xarakteristikalar — forma
  * shu kategoriyaga mos maydonlarni chizsin.
  */
+/**
+ * GET /api/cards/categories/:marketplace/tnved?subjectId=
+ *
+ * Shu predmet uchun ruxsat etilgan TN VED kodlari. Sotuvchi kodni o'zi
+ * topa olmaydi, noto'g'risi esa kartochkani kabinetda qizil xatoga aylantiradi.
+ */
+export async function getCategoryTnved(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+    const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
+    if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
+    if (spec.id !== 'WB') return res.json({ marketplace: spec.id, items: [] });
+
+    const subjectId = Number(req.query.subjectId);
+    if (!Number.isFinite(subjectId) || subjectId <= 0) {
+      throw new HttpError(400, "subjectId noto'g'ri");
+    }
+
+    const cred = await prisma.userMarketplace.findFirst({
+      where: { organizationId, marketplace: spec.id as any, isActive: true },
+    });
+    if (!cred) {
+      throw new HttpError(400, `${spec.name} ulanmagan — Marketplace'lar bo'limida API kalitni kiriting.`);
+    }
+
+    const items = await getWbTnved(decrypt(cred.apiKey), subjectId);
+    res.json({ marketplace: spec.id, subjectId, items });
+  } catch (err: any) {
+    if (err?.name === 'DecryptionError') return next(new HttpError(409, err.message));
+    if (typeof err?.status === 'number') {
+      return next(new HttpError(err.status === 429 ? 429 : 502, err.message));
+    }
+    next(err);
+  }
+}
+
 export async function getCategoryCharcs(req: Request, res: Response, next: NextFunction) {
   try {
     const organizationId = req.organization!.id;

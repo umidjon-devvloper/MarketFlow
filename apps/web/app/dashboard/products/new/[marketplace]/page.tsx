@@ -25,6 +25,7 @@ import { WbCharcFields, CharcField } from '@/components/listings/WbCharcFields';
 import { RemoteImage } from '@/components/RemoteImage';
 import { QualityPanel, QualityScore } from '@/components/quality/QualityBadge';
 import { PriceAdvisor } from '@/components/products/PriceAdvisor';
+import { TnvedPicker } from '@/components/products/TnvedPicker';
 import { useToast } from '@/components/Toast';
 import { SkeletonPage } from '@/components/Skeleton';
 import {
@@ -54,6 +55,8 @@ interface SpecField {
   /** Qiymat shakli (regex) — masalan TN VED uchun 10 ta raqam */
   pattern?: string;
   patternHint?: string;
+  /** Variantlar marketplace'dan kategoriyaga qarab olinadi */
+  optionsFrom?: 'wb-tnved';
   aiFillable?: boolean;
   mapsTo?: string;
   /** Formada ko'rsatilmaydi — kategoriya tanlagichi to'ldiradi */
@@ -398,6 +401,8 @@ export default function NewCardPage() {
         imageUrls: exportImageUrls.slice(0, 4),
         hints,
         scope,
+        // TN VED ro'yxati kategoriyaga bog'liq — AI shundan tanlaydi
+        categoryId: values.categoryId || undefined,
         // Kategoriya xususiyatlari ham to'ldirilsin — ular spec'da yo'q,
         // kategoriya tanlangandan keyin marketplace'dan keladi
         charcs: charcFields.map((c) => ({
@@ -1190,7 +1195,15 @@ function FieldInput({
         )}
       </label>
 
-      {field.type === 'category' ? (
+      {field.optionsFrom === 'wb-tnved' ? (
+        <TnvedPicker
+          marketplace={marketplace}
+          categoryId={categoryId}
+          value={value}
+          onChange={onChange}
+          className={base}
+        />
+      ) : field.type === 'category' ? (
         <CategoryPicker
           marketplace={marketplace}
           value={value}

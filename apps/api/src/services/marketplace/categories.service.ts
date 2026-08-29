@@ -467,8 +467,33 @@ export async function getWbCharacteristics(apiKey: string, subjectId: number): P
   return out;
 }
 
+/** TN VED ro'yxati predmet bo'yicha keshlanadi — u kunlab o'zgarmaydi */
+const tnvedCache = new Map<string, { items: Array<{ tnved: string; isKiz?: boolean }>; expiresAt: number }>();
+const TNVED_TTL_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Predmet uchun ruxsat etilgan TN VED kodlari.
+ *
+ * Sotuvchi kodni o'zi topa olmaydi (bojxona ma'lumotnomasi), noto'g'ri kod esa
+ * kartochkani WB kabinetida qizil xatoga aylantiradi. Shuning uchun ro'yxat
+ * formaga beriladi va joylashdan oldin tekshiriladi.
+ */
+export async function getWbTnved(
+  apiKey: string,
+  subjectId: number | string,
+): Promise<Array<{ tnved: string; isKiz?: boolean }>> {
+  const key = `${subjectId}:${apiKey.slice(-8)}`;
+  const hit = tnvedCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.items;
+
+  const items = await wb.getTnved(apiKey, subjectId);
+  if (items.length) tnvedCache.set(key, { items, expiresAt: Date.now() + TNVED_TTL_MS });
+  return items;
+}
+
 export function clearCategoryCache(): void {
   treeCache.clear();
+  tnvedCache.clear();
   inFlight.clear();
 }
 

@@ -55,6 +55,11 @@ export interface SpecField {
   pattern?: string;
   /** Xato chiqqanda ko'rsatiladigan tushuntirish */
   patternHint?: string;
+  /**
+   * Variantlar statik emas, marketplace'dan kategoriyaga qarab olinadi.
+   * 'wb-tnved' — GET /api/cards/categories/WB/tnved?subjectId=
+   */
+  optionsFrom?: 'wb-tnved';
   /** AI rasmga qarab to'ldira oladimi */
   aiFillable?: boolean;
   /**
@@ -563,13 +568,15 @@ const WB: MarketplaceSpec = {
           label: 'Brend',
           excelHeader: 'Бренд',
           type: 'text',
-          required: true,
+          // MAJBURIY EMAS. WB brendni o'z ro'yxatidan tekshiradi va begona
+          // savdo belgisini (PULL&BEAR, Polo) ruxsatsiz qabul qilmaydi —
+          // kartochka yaratiladi, lekin kabinetda qizil xato bo'lib qoladi.
+          // Bo'sh brend bilan kartochka muammosiz ishlaydi (akkauntdagi
+          // mavjud kartochkalarda brand="" — tekshirilgan).
+          required: false,
           mapsTo: 'brand',
           aiFillable: true,
-          // WB brendni o'z ro'yxatidan tekshiradi. Ro'yxatda yo'q brend bilan
-          // kartochka yaratiladi, lekin kabinetda qizil xato bo'lib qoladi va
-          // sotuvga chiqmaydi — buni API qaytarmaydi, faqat kabinetda ko'rinadi.
-          hint: "WB'da ro'yxatdan o'tgan brend bo'lishi kerak — yo'q brend kabinetda xato beradi",
+          hint: "Bo'sh qoldirsangiz WB brendsiz joylaydi. Yozsangiz — o'zingizga tegishli va WB'da ro'yxatdan o'tgan brend bo'lsin",
         },
         { key: 'description', label: 'Tavsif', excelHeader: 'Описание', type: 'textarea', required: true, maxLength: 5000, mapsTo: 'description', aiFillable: true, hint: 'WB qidiruvi tavsifdagi kalit soʻzlarga sezgir' },
         { key: 'barcode', label: 'Barkod', excelHeader: 'Баркод', type: 'text', required: false, mapsTo: 'barcode', hint: "Bo'sh bo'lsa WB generatsiya qiladi" },
@@ -581,7 +588,18 @@ const WB: MarketplaceSpec = {
       fields: [
         { key: 'price', label: 'Narx', excelHeader: 'Цена, руб.', type: 'number', required: true, min: 1, unit: 'RUB', mapsTo: 'basePrice' },
         { key: 'stock', label: 'Zaxira', excelHeader: 'Остаток', type: 'number', required: true, min: 0, mapsTo: 'stock' },
-        { key: 'vat', label: 'QQS stavkasi', excelHeader: 'Ставка НДС', type: 'select', required: true, options: ['0%', '10%', '20%'] },
+        {
+          key: 'vat',
+          label: 'QQS stavkasi',
+          excelHeader: 'Ставка НДС',
+          type: 'select',
+          required: true,
+          options: ['0%', '10%', '20%'],
+          // WB kartochka API'sida QQS maydoni yo'q — bu qiymat faqat Excel
+          // shabloniga tushadi. Sotuvchi buni bilmasa, kabinetdagi "VAT rate"
+          // xatosini shu yerdan tuzatmoqchi bo'lib vaqt yo'qotadi.
+          hint: "Faqat Excel shabloni uchun — API orqali joylashda WB buni kabinet sozlamasidan oladi",
+        },
       ],
     },
     {
@@ -601,7 +619,11 @@ const WB: MarketplaceSpec = {
           excelHeader: 'ТНВЭД',
           type: 'text',
           required: false,
-          hint: 'AI topa olmaydi — bojxona kodi, 10 ta raqam',
+          hint: "Kategoriya tanlangach ro'yxat WB dan keladi va AI mos kodni o'zi tanlaydi",
+          optionsFrom: 'wb-tnved',
+          // Ro'yxat yopiq (WB predmet ma'lumotnomasi) — AI erkin yozmaydi,
+          // faqat ruxsat etilgan kodlardan birini tanlaydi
+          aiFillable: true,
           // WB kodni qat'iy tekshiradi: harf yoki noto'g'ri uzunlik bo'lsa
           // kartochka kabinetda qizil xato bilan qoladi va sotuvga chiqmaydi
           pattern: '^\\d{10}$',

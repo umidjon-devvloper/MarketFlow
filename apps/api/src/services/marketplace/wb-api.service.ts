@@ -568,6 +568,30 @@ export function uploadCards(apiKey: string, body: unknown): Promise<any> {
 }
 
 /**
+ * GET /content/v2/directory/tnved — predmet uchun ruxsat etilgan TN VED kodlari.
+ *
+ * TN VED butun dunyo uchun bitta emas: WB har predmetga o'z ro'yxatini
+ * belgilaydi. Polo uchun to'g'ri kod sarafan predmetida qabul qilinmaydi —
+ * "Invalid HS code. Value doesn't match the directory" aynan shu haqda.
+ *
+ * `isKiz` — shu kod bo'yicha tovar "Chesniy znak" markirovkasini talab qiladi.
+ */
+export async function getTnved(
+  apiKey: string,
+  subjectId: number | string,
+  search?: string,
+): Promise<Array<{ tnved: string; isKiz?: boolean }>> {
+  const params = new URLSearchParams({ subjectID: String(subjectId), locale: 'ru' });
+  if (search) params.set('search', search);
+  const data = await wbFetch<any>(
+    apiKey,
+    `${WB_CONTENT}/content/v2/directory/tnved?${params}`,
+    { bucket: 'cards' },
+  );
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+/**
  * POST /content/v2/cards/update — MAVJUD kartochkani yangilash.
  *
  * upload dan farqi: upload faqat yangi kartochka yaratadi va o'sha
