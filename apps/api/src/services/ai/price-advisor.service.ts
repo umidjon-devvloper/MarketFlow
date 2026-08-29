@@ -71,8 +71,10 @@ Qoidalar:
 - Javob FAQAT so'ralgan valyutada bo'ladi. Valyutani almashtirmaysan, kurs ishlatmaysan, boshqa valyutadagi raqam yozmaysan.
 - Narxlar butun son bo'lsin (tiyin/kopeyka yo'q).
 - Berilgan raqobatchi narxlari bo'lsa, birinchi navbatda ularga tayanasan.
-- Raqobatchi ma'lumoti bo'lmasa, buni ochiq aytasan va confidence ni "low" qilasan — o'ylab topilgan aniq raqamlarni haqiqat qilib ko'rsatmaysan.
+- min, recommended va max HAR DOIM son bo'ladi — null, bo'sh yoki matn bo'lishi mumkin emas. Ma'lumot kam bo'lsa ham eng yaxshi taxminingni son qilib berasan.
+- Raqobatchi ma'lumoti bo'lmasa, buni warnings da ochiq aytasan va confidence ni "low" qilasan — lekin baribir son berasan.
 - Tannarx berilgan bo'lsa, tavsiya etilgan narx undan past bo'lishi mumkin emas.
+- "recommended" — bozorga qarab bergan tavsiyang.
 - Sodda o'zbek tilida yozasan, sotuvchi tushunadigan qilib.
 - Javob faqat JSON, boshqa hech narsa yo'q.`;
 
@@ -105,7 +107,6 @@ MAHSULOT:
 ${attrs || '- qo\'shimcha xususiyat kiritilmagan'}
 
 ${input.costPrice ? `TANNARX: ${money(input.costPrice, input.currency)} — tavsiya shundan past bo'lmasin.` : "TANNARX: kiritilmagan."}
-${input.currentPrice ? `SOTUVCHI QO'YGAN NARX: ${money(input.currentPrice, input.currency)} — shu narxga baho ber.` : "SOTUVCHI HALI NARX QO'YMAGAN — verdict ni null qil."}
 
 RAQOBATCHI NARXLARI:
 ${rivalText}
@@ -117,7 +118,6 @@ Javobni AYNAN shu JSON formatida ber:
   "max": <eng yuqori mantiqiy narx, son>,
   "summary": "2-3 gapda: bozorda bu mahsulot qanaqa narxda turadi va nega shu narx tavsiya qilinyapti",
   "factors": ["narxga ta'sir qilgan omil 1", "omil 2", "omil 3"],
-  "verdict": {"level": "low|ok|high", "message": "sotuvchining narxi haqida 1-2 gap: bozorga to'g'ri keladimi, kelmasa qancha qilish kerak"},
   "confidence": "low|medium|high",
   "warnings": ["ma'lumot yetishmasa shu yerda ayt"]
 }`;
@@ -137,6 +137,44 @@ function toPrice(value: unknown): number | null {
   const n = typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^\d.]/g, ''));
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.round(n);
+}
+
+/**
+ * Sotuvchi narxiga xulosa — AI emas, kod chiqaradi.
+ *
+ * Nega: sotuvchining narxini promptga qo'shsak, model o'sha raqamga yopishib
+ * qoladi va "narxingiz qimmat" deb turib, tavsiya sifatida o'sha narxning
+ * o'zini qaytaradi. Endi model narxni umuman ko'rmaydi — bozor oralig'ini
+ * mustaqil beradi, xulosani esa oraliq bilan taqqoslab biz yozamiz. Shunda
+ * xulosa hech qachon tavsiyaga zid bo'lmaydi.
+ */
+function judgePrice(
+  price: number | undefined,
+  range: { min: number; recommended: number; max: number },
+  currency: string,
+): { level: VerdictLevel; message: string } | null {
+  if (!price) return null;
+
+  if (price > range.max) {
+    const pct = Math.round(((price - range.max) / range.max) * 100);
+    return {
+      level: 'high',
+      message: `Narxingiz bozor oralig'idan ${pct}% yuqori. Sotuv sekinlashadi — ${money(range.recommended, currency)} atrofiga tushirib ko'ring.`,
+    };
+  }
+
+  if (price < range.min) {
+    const pct = Math.round(((range.min - price) / range.min) * 100);
+    return {
+      level: 'low',
+      message: `Narxingiz bozor oralig'idan ${pct}% past. Bu narxda foyda qolmasligi mumkin — ${money(range.recommended, currency)} gacha ko'tarsangiz bo'ladi.`,
+    };
+  }
+
+  return {
+    level: 'ok',
+    message: `Narxingiz bozor oralig'ida (${money(range.min, currency)} … ${money(range.max, currency)}). O'zgartirish shart emas.`,
+  };
 }
 
 /**
@@ -170,14 +208,7 @@ export function normalizeAdvice(
     max = Math.max(max, input.costPrice);
   }
 
-  const rawVerdict = parsed?.verdict;
-  const level: VerdictLevel | null =
-    rawVerdict && ['low', 'ok', 'high'].includes(rawVerdict.level) ? rawVerdict.level : null;
-
-  const verdict =
-    input.currentPrice && level
-      ? { level, message: String(rawVerdict.message || '') }
-      : null;
+  const verdict = judgePrice(input.currentPrice, { min, recommended, max }, input.currency);
 
   let confidence: Confidence = ['low', 'medium', 'high'].includes(parsed?.confidence)
     ? parsed.confidence
@@ -209,37 +240,57 @@ export function normalizeAdvice(
 export async function suggestPrice(input: PriceAdviceInput): Promise<PriceAdvice> {
   const userPrompt = buildUserPrompt(input);
 
-  let content: string;
-  let provider: 'openai' | 'gemini' = 'openai';
+  const providers: Array<{
+    name: 'openai' | 'gemini';
+    run: () => Promise<{ content: string; tokens: number }>;
+  }> = [
+    {
+      name: 'openai',
+      run: () =>
+        callOpenAI(
+          [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          { jsonMode: true, temperature: 0.3, maxTokens: 1200 },
+        ),
+    },
+    {
+      name: 'gemini',
+      run: () =>
+        callGemini(userPrompt, {
+          systemInstruction: SYSTEM_PROMPT,
+          jsonMode: true,
+          temperature: 0.3,
+          maxTokens: 2000,
+        }),
+    },
+  ];
+
+  const failures: string[] = [];
   let tokensUsed = 0;
 
-  try {
-    const result = await callOpenAI(
-      [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      { jsonMode: true, temperature: 0.3, maxTokens: 1200 },
-    );
-    content = result.content;
-    tokensUsed = result.tokens;
-  } catch (openaiErr) {
-    console.warn("OpenAI narx tavsiyasi ishlamadi, Gemini'ga o'tildi:", (openaiErr as Error).message);
+  // Ikkinchi provayderga faqat chaqiruv YIQILGANDA emas, javob YARAMAGANDA ham
+  // o'tamiz: model JSON qaytarib, ichida narx bermasligi ham xuddi shunday
+  // muvaffaqiyatsizlik. Avval shu holatda foydalanuvchi boshi berk ko'chaga
+  // kirib qolardi.
+  for (const provider of providers) {
     try {
-      const result = await callGemini(userPrompt, {
-        systemInstruction: SYSTEM_PROMPT,
-        jsonMode: true,
-        temperature: 0.3,
-      });
-      content = result.content;
-      tokensUsed = result.tokens;
-      provider = 'gemini';
-    } catch (geminiErr) {
-      throw new Error(
-        `AI narx tavsiyasi olinmadi. OpenAI: ${(openaiErr as Error).message} | Gemini: ${(geminiErr as Error).message}`,
-      );
+      const result = await provider.run();
+      tokensUsed += result.tokens;
+      try {
+        return {
+          ...normalizeAdvice(parseJson(result.content), input),
+          provider: provider.name,
+          tokensUsed,
+        };
+      } catch (badAnswer) {
+        failures.push(`${provider.name}: ${(badAnswer as Error).message}`);
+      }
+    } catch (callFailed) {
+      failures.push(`${provider.name}: ${(callFailed as Error).message}`);
     }
   }
 
-  return { ...normalizeAdvice(parseJson(content), input), provider, tokensUsed };
+  throw new Error(`AI narx tavsiyasi olinmadi — ${failures.join(' | ')}`);
 }

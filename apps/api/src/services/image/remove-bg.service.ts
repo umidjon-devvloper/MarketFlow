@@ -6,7 +6,7 @@
  * detal aynan saqlanadi. Marketplace uchun eng to'g'ri variant. Sinxron va
  * tez (~1-3s), shuning uchun so'rovni bloklab timeout bermaydi.
  *
- * Kalit: REMOVE_BG_API_KEY (.env, gitignore'да). remove.bg da ro'yxatdan o'tib
+ * Kalit: REMOVE_BG_API_KEY (.env, gitignore'da). remove.bg da ro'yxatdan o'tib
  * olinadi. Bepul tarif oyiga ~50 rasm (preview o'lcham), keyin pullik.
  */
 
@@ -43,7 +43,7 @@ export async function removeBackgroundRemoveBg(
   const form = new FormData();
   form.append('image_file', new Blob([new Uint8Array(image)], { type: mime }), `product.${ext}`);
   // "auto" — akkaunt ruxsat bergan eng yuqori o'lcham (kredit sarflaydi;
-  // bepul tarifда preview qaytadi). Sozlash uchun REMOVE_BG_SIZE.
+  // bepul tarifda preview qaytadi). Sozlash uchun REMOVE_BG_SIZE.
   form.append('size', process.env.REMOVE_BG_SIZE || 'auto');
   // Fonni oq qilamiz — marketplace talabi (shaffof emas)
   form.append('bg_color', 'ffffff');

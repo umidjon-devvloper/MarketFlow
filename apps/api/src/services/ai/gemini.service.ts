@@ -38,9 +38,18 @@ export async function callGemini(
     ],
     generationConfig: {
       temperature: options.temperature ?? 0.7,
-      maxOutputTokens: options.maxTokens || 1500,
+      maxOutputTokens: options.maxTokens || 2500,
     },
   };
+
+  // 2.5 qatoridagi modellar javobdan OLDIN "o'ylash" tokenlarini sarflaydi va
+  // ular ham maxOutputTokens ichidan yeyiladi. Natijada javob o'rtasidan
+  // kesilib qolardi — JSON yarim bo'lib kelardi. Bu chaqiruvlar qisqa va
+  // aniq, shuning uchun o'ylashni o'chiramiz (env orqali qaytarish mumkin).
+  const thinkingBudget = Number(process.env.GEMINI_THINKING_BUDGET ?? 0);
+  if (GEMINI_MODEL.includes('2.5')) {
+    body.generationConfig.thinkingConfig = { thinkingBudget };
+  }
 
   if (options.jsonMode) {
     body.generationConfig.responseMimeType = 'application/json';
@@ -64,8 +73,21 @@ export async function callGemini(
   }
 
   const data = (await res.json()) as any;
-  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const candidate = data.candidates?.[0];
+  const content = candidate?.content?.parts?.[0]?.text || '';
   const tokens = data.usageMetadata?.totalTokenCount || 0;
+
+  // Bo'sh yoki kesilgan javobni jimgina qaytarish eng yomoni: chaqiruvchi uni
+  // parse qilmoqchi bo'ladi va tushunarsiz "JSON xato" chiqadi. Sababini
+  // aytamiz — shunda fallback ham, log ham foydali bo'ladi.
+  if (candidate?.finishReason === 'MAX_TOKENS') {
+    throw new Error('Gemini javobi token chegarasiga yetdi — javob to\'liq kelmadi');
+  }
+  if (!content.trim()) {
+    throw new Error(
+      `Gemini bo'sh javob qaytardi${candidate?.finishReason ? ` (${candidate.finishReason})` : ''}`,
+    );
+  }
 
   return { content, tokens };
 }

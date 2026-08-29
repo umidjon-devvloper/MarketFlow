@@ -32,19 +32,44 @@ describe('AI narx javobini tozalash', () => {
   });
 
   it("sotuvchi narx kiritmagan bo'lsa xulosa qaytarmaydi", () => {
-    const out = normalizeAdvice(
-      { min: 900, recommended: 1200, max: 1500, verdict: { level: 'high', message: 'qimmat' } },
-      base,
-    );
+    const out = normalizeAdvice({ min: 900, recommended: 1200, max: 1500 }, base);
     expect(out.verdict).toBeNull();
   });
 
-  it('narx kiritilgan bo\'lsa xulosani saqlaydi', () => {
+  it("oraliqdan yuqori narxni 'qimmat' deb belgilaydi", () => {
     const out = normalizeAdvice(
-      { min: 900, recommended: 1200, max: 1500, verdict: { level: 'high', message: 'qimmat' } },
-      { ...base, currentPrice: 2400 },
+      { min: 900, recommended: 1200, max: 1500 },
+      { ...base, currentPrice: 3000 },
     );
-    expect(out.verdict).toEqual({ level: 'high', message: 'qimmat' });
+    expect(out.verdict?.level).toBe('high');
+    // Intl ajratgich sifatida oddiy probel emas, uzilmas probel qo'yadi
+    expect(out.verdict?.message).toMatch(/1.200/);
+  });
+
+  it("oraliqdan past narxni 'arzon' deb belgilaydi", () => {
+    const out = normalizeAdvice(
+      { min: 900, recommended: 1200, max: 1500 },
+      { ...base, currentPrice: 400 },
+    );
+    expect(out.verdict?.level).toBe('low');
+  });
+
+  it("oraliq ichidagi narxni 'mos' deb belgilaydi", () => {
+    const out = normalizeAdvice(
+      { min: 900, recommended: 1200, max: 1500 },
+      { ...base, currentPrice: 1400 },
+    );
+    expect(out.verdict?.level).toBe('ok');
+  });
+
+  it('xulosa hech qachon tavsiyaga zid bo\'lmaydi', () => {
+    // Model "qimmat" deb, tavsiya sifatida o'sha narxni qaytarsa ham —
+    // xulosa endi AI dan emas, oraliqdan chiqadi
+    const out = normalizeAdvice(
+      { min: 1290, recommended: 4500, max: 4500, verdict: { level: 'high', message: 'qimmat' } },
+      { ...base, currentPrice: 4500 },
+    );
+    expect(out.verdict?.level).toBe('ok');
   });
 
   it('raqobatchi narxi yo\'q bo\'lsa ogohlantiradi', () => {

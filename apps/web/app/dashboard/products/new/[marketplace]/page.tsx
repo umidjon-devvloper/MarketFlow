@@ -375,6 +375,17 @@ export default function NewCardPage() {
         marketplace: spec.id,
         imageUrls: exportImageUrls.slice(0, 4),
         hints,
+        // Kategoriya xususiyatlari ham to'ldirilsin — ular spec'da yo'q,
+        // kategoriya tanlangandan keyin marketplace'dan keladi
+        charcs: charcFields.map((c) => ({
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          required: c.required,
+          unit: c.unit,
+          maxCount: c.maxCount,
+          popular: c.popular,
+        })),
       });
 
       // AI faqat bo'sh maydonlarni to'ldiradi — qo'lda yozilganini buzmaydi
@@ -386,9 +397,26 @@ export default function NewCardPage() {
         return next;
       });
 
+      const charcValues = (data.charcValues || {}) as Record<string, string>;
+      if (Object.keys(charcValues).length) {
+        setWbCharcs((prev) => {
+          const next = { ...prev };
+          for (const [id, value] of Object.entries(charcValues)) {
+            if (!(next[id] ?? '').trim()) next[id] = value;
+          }
+          return next;
+        });
+      }
+
       setAiNotes(data.notes || []);
       const count = Object.keys(data.values || {}).length;
-      toast('success', `AI ${count} ta maydonni to'ldirdi (${data.provider})`);
+      const charcCount = Object.keys(charcValues).length;
+      toast(
+        'success',
+        charcCount
+          ? `AI ${count} ta maydon va ${charcCount} ta xususiyatni to'ldirdi (${data.provider})`
+          : `AI ${count} ta maydonni to'ldirdi (${data.provider})`,
+      );
     } catch (err: any) {
       toast('error', err.response?.data?.error || "AI to'ldirish ishlamadi");
     } finally {

@@ -49,13 +49,42 @@ async function toInlineImage(url: string): Promise<InlineImage> {
   return { mimeType: 'image/jpeg', base64: resized.toString('base64') };
 }
 
+/**
+ * Kategoriyaga bog'liq dinamik xarakteristika (WB "предмет" maydonlari).
+ * Spec'da yo'q — marketplace API'sidan kategoriya tanlangach keladi.
+ */
+export interface CharcSpec {
+  id: number;
+  name: string;
+  type: 'number' | 'string';
+  required: boolean;
+  unit?: string;
+  /** Nechta qiymat kiritish mumkin (1 dan katta bo'lsa vergul bilan) */
+  maxCount: number;
+  popular?: boolean;
+}
+
 export interface VisionFillResult {
   values: Record<string, string>;
+  /** Dinamik xarakteristikalar — kalit sifatida charc id (matn ko'rinishida) */
+  charcValues: Record<string, string>;
   provider: 'openai' | 'gemini';
   notes: string[];
   /** Sarflangan tokenlar — xarajat hisobi uchun */
   tokensUsed: number;
 }
+
+/**
+ * AI ga bir chaqiruvda yuboriladigan xarakteristika soni.
+ *
+ * WB ba'zi kategoriyalarda 100 dan ortiq maydon beradi — hammasini yuborish
+ * promptni ham, hisobni ham shishiradi. Majburiy va ommabop maydonlar
+ * birinchi, qolgani chegaragacha.
+ */
+const MAX_CHARCS_TO_ASK = 45;
+
+/** Uzun matnli maydon (tavsif) uchun eng kam uzunlik */
+const MIN_LONG_TEXT = 800;
 
 /** Oxirgi chaqiruvda sarflangan token soni (xarajat hisobi uchun) */
 let lastTokenUsage = 0;
@@ -74,7 +103,16 @@ function buildSystemPrompt(spec: MarketplaceSpec): string {
     `- Faqat rasmda ko'rinadigan narsaga asoslan. Ko'rinmasa — o'sha maydonni bo'sh satr ("") qoldir, o'ylab topma.`,
     `- Brend logotipi ko'rinmasa brendni taxmin qilma.`,
     `- Matn tili: ${spec.currency === 'UZS' ? "o'zbek tili (lotin)" : 'rus tili'}.`,
+    `- Variantlari raqamlangan maydonlarda javob sifatida FAQAT raqamni yoz`,
+    `  (masalan "2"), variant matnini emas. Mos variant bo'lmasa — bo'sh qoldir.`,
     `- Har bir maydonning belgi chegarasiga qat'iy rioya qil.`,
+    `- TAVSIF — eng muhim maydon: qidiruv shu matnga qarab topadi va u UZUN bo'lishi shart.`,
+    `  Kamida ${MIN_LONG_TEXT} belgi yoz. Bu talab, tavsiya emas: qisqa tavsif qabul qilinmaydi.`,
+    `  Tuzilishi — 4 ta xatboshi, har biri 3-4 gapdan:`,
+    `  1) mahsulot nima va nimasi bilan ajralib turadi;`,
+    `  2) material, sifat, tikuv/ishlanish tafsilotlari;`,
+    `  3) kimga va qanday holatlarga mos, nima bilan kiyish/ishlatish mumkin;`,
+    `  4) parvarish qoidasi, o'lcham tanlash bo'yicha maslahat, komplektatsiya.`,
     `- Javob FAQAT JSON obyekt bo'lsin, boshqa hech narsa yozma.`,
   ].join('\n');
 }
@@ -84,10 +122,34 @@ function buildFieldSpecText(fields: SpecField[]): string {
     .map((f) => {
       const parts = [`"${f.key}" — ${f.label}`];
       if (f.type === 'number') parts.push('(faqat son)');
-      if (f.maxLength) parts.push(`(max ${f.maxLength} belgi)`);
-      if (f.options?.length) parts.push(`(faqat shulardan biri: ${f.options.join(' | ')})`);
+      if (f.type === 'textarea' && (f.maxLength ?? 0) >= 1000) {
+        parts.push(`(kamida ${MIN_LONG_TEXT} belgi, max ${f.maxLength})`);
+      } else if (f.maxLength) {
+        parts.push(`(max ${f.maxLength} belgi)`);
+      }
+      if (f.options?.length) {
+        // Variant nomini yozdirish ishonchsiz: model ro'yxat o'zbekcha bo'lsa ham
+        // ruscha javob berardi ("Мужчины") va qiymat yo'qolardi. Raqam esa tildan
+        // xoli — model raqamni to'g'ri tanlaydi, nomni biz o'zimiz qo'yamiz.
+        const numbered = f.options.map((o, i) => `${i}=${o}`).join(' | ');
+        parts.push(`(javobni RAQAM bilan ber, faqat shulardan: ${numbered})`);
+      }
       if (f.required) parts.push('[majburiy]');
       if (f.hint) parts.push(`— ${f.hint}`);
+      return `- ${parts.join(' ')}`;
+    })
+    .join('\n');
+}
+
+/** Kategoriya xarakteristikalarini AI tushunadigan ro'yxatga aylantiradi */
+function buildCharcSpecText(charcs: CharcSpec[]): string {
+  return charcs
+    .map((c) => {
+      const parts = [`"${c.id}" — ${c.name}`];
+      if (c.type === 'number') parts.push('(faqat son)');
+      if (c.unit) parts.push(`(o'lchov: ${c.unit})`);
+      if (c.maxCount > 1) parts.push(`(${c.maxCount} tagacha qiymat, vergul bilan)`);
+      if (c.required) parts.push('[majburiy]');
       return `- ${parts.join(' ')}`;
     })
     .join('\n');
@@ -97,20 +159,43 @@ function buildUserPrompt(
   spec: MarketplaceSpec,
   fields: SpecField[],
   hints: Record<string, string>,
+  charcs: CharcSpec[],
 ): string {
   const hintLines = Object.entries(hints)
     .filter(([, v]) => v && String(v).trim())
     .map(([k, v]) => `- ${k}: ${v}`);
 
+  const charcBlock = charcs.length
+    ? [
+        ``,
+        `KATEGORIYA XUSUSIYATLARI (${charcs.length} ta) — bularni ham to'ldir.`,
+        `Kalit sifatida qavs ichidagi raqamni ishlat. Rasmdan yoki mahsulot turidan`,
+        `aniq bilinadiganini to'ldir, bilinmasa o'sha kalitni umuman yozma —`,
+        `noto'g'ri qiymat bo'sh maydondan yomonroq.`,
+        ``,
+        buildCharcSpecText(charcs),
+      ].join('\n')
+    : '';
+
   return [
     `${spec.name} kartochkasi uchun quyidagi maydonlarni rasmga qarab to'ldir:`,
     ``,
     buildFieldSpecText(fields),
+    charcBlock,
     ``,
     hintLines.length ? `Sotuvchi bergan qo'shimcha maʼlumot:\n${hintLines.join('\n')}` : '',
     ``,
-    `Javob formati (aynan shu kalitlar bilan JSON):`,
-    `{${fields.map((f) => `"${f.key}": "..."`).join(', ')}}`,
+    `Javob formati (aynan shu tuzilishda JSON):`,
+    `{`,
+    `  "fields": {${fields
+      .map((f) =>
+        f.type === 'textarea' && (f.maxLength ?? 0) >= 1000
+          ? `"${f.key}": "(kamida ${MIN_LONG_TEXT} belgi, 4 xatboshi)"`
+          : `"${f.key}": "..."`,
+      )
+      .join(', ')}},`,
+    `  "charcs": {${charcs.length ? '"<xususiyat raqami>": "qiymat"' : ''}}`,
+    `}`,
   ]
     .filter(Boolean)
     .join('\n');
@@ -149,7 +234,7 @@ async function callOpenAIVision(
         { role: 'user', content },
       ],
       temperature: 0.4,
-      max_tokens: 2000,
+      max_tokens: 4000,
       response_format: { type: 'json_object' },
     }),
   });
@@ -189,8 +274,13 @@ async function callGeminiVision(
       ],
       generationConfig: {
         temperature: 0.4,
-        maxOutputTokens: 2000,
+        maxOutputTokens: 4000,
         responseMimeType: 'application/json',
+        // 2.5 modellari javobdan oldin "o'ylash" tokenlarini yeydi va javob
+        // yarim kesilib qoladi — bu yerda o'ylash kerak emas.
+        ...(GEMINI_MODEL.includes('2.5')
+          ? { thinkingConfig: { thinkingBudget: Number(process.env.GEMINI_THINKING_BUDGET ?? 0) } }
+          : {}),
       },
     }),
   });
@@ -217,6 +307,68 @@ function parseJson(raw: string): Record<string, any> {
   }
 }
 
+/**
+ * Matndan sonni ajratadi, ajrata olmasa null.
+ *
+ * Number('') === 0 — shuning uchun faqat Number.isFinite() ni tekshirish
+ * yetmaydi: AI og'irlik o'rniga "og'ir" desa, tozalangandan keyin bo'sh satr
+ * qoladi va u jimgina 0 ga aylanadi. Marketplace'ga nol og'irlik ketishi
+ * kartochkani rad ettiradi yoki yetkazib berish narxini buzadi.
+ */
+function toNumberOrNull(raw: string): number | null {
+  const cleaned = raw.replace(/[^\d.-]/g, '');
+  if (!/\d/.test(cleaned)) return null;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+}
+
+/**
+ * Xarakteristika qiymatlarini tozalash.
+ *
+ * AI raqam so'ralgan joyga matn ("qora"), yoki maxCount 2 bo'lgan joyga beshta
+ * qiymat yozib yuborishi mumkin — ikkalasini ham marketplace rad etadi.
+ */
+function sanitizeCharcs(charcs: CharcSpec[], parsed: Record<string, any>) {
+  const charcValues: Record<string, string> = {};
+  const notes: string[] = [];
+  if (!charcs.length) return { charcValues, notes };
+
+  for (const charc of charcs) {
+    let value = parsed?.[String(charc.id)];
+    if (value === undefined || value === null) continue;
+
+    if (Array.isArray(value)) value = value.join(', ');
+    value = String(value).trim();
+    if (!value || value.toLowerCase() === 'null' || value === '-') continue;
+
+    if (charc.type === 'number') {
+      const num = toNumberOrNull(String(value));
+      if (num === null) {
+        notes.push(`"${charc.name}" son bo'lishi kerak — AI "${value}" dedi, o'tkazib yuborildi`);
+        continue;
+      }
+      charcValues[String(charc.id)] = String(num);
+      continue;
+    }
+
+    if (charc.maxCount > 1) {
+      const parts = String(value)
+        .split(',')
+        .map((v: string) => v.trim())
+        .filter(Boolean);
+      if (parts.length > charc.maxCount) {
+        notes.push(`"${charc.name}" uchun ${charc.maxCount} tagacha qiymat mumkin — ortiqchasi olib tashlandi`);
+      }
+      charcValues[String(charc.id)] = parts.slice(0, charc.maxCount).join(', ');
+      continue;
+    }
+
+    charcValues[String(charc.id)] = value;
+  }
+
+  return { charcValues, notes };
+}
+
 /** AI qaytargan qiymatlarni spec chegaralariga moslash */
 function sanitize(fields: SpecField[], parsed: Record<string, any>) {
   const values: Record<string, string> = {};
@@ -231,14 +383,24 @@ function sanitize(fields: SpecField[], parsed: Record<string, any>) {
     if (!value || value.toLowerCase() === 'null' || value === '-') continue;
 
     if (field.type === 'number') {
-      const num = Number(String(value).replace(/[^\d.-]/g, ''));
-      if (!Number.isFinite(num)) continue;
+      const num = toNumberOrNull(String(value));
+      if (num === null) {
+        notes.push(`"${field.label}" son bo'lishi kerak — AI "${value}" dedi, o'tkazib yuborildi`);
+        continue;
+      }
       values[field.key] = String(num);
       continue;
     }
 
     if (field.options?.length && !field.options.includes(value)) {
-      // Yaqin variantni topishga urinamiz (registrga sezgir emas)
+      // Avval raqam: prompt aynan shuni so'raydi
+      const index = /^\d+$/.test(value) ? Number(value) : -1;
+      if (index >= 0 && index < field.options.length) {
+        values[field.key] = field.options[index];
+        continue;
+      }
+
+      // Raqam kelmasa — yaqin variantni topishga urinamiz (registrga sezgir emas)
       const match = field.options.find(
         (o) => o.toLowerCase() === value.toLowerCase() || o.toLowerCase().includes(value.toLowerCase()),
       );
@@ -268,12 +430,21 @@ export async function fillFieldsFromImages(
   imageUrls: string[],
   spec: MarketplaceSpec,
   hints: Record<string, string> = {},
+  allCharcs: CharcSpec[] = [],
 ): Promise<VisionFillResult> {
   if (!imageUrls.length) throw new Error('Kamida bitta rasm kerak');
 
   const fields = fillableFields(spec);
+
+  // Majburiy → ommabop → qolgani tartibida, chegaragacha
+  const ordered = [...allCharcs].sort((a, b) => {
+    const weight = (c: CharcSpec) => (c.required ? 0 : c.popular ? 1 : 2);
+    return weight(a) - weight(b);
+  });
+  const charcs = ordered.slice(0, MAX_CHARCS_TO_ASK);
+
   const systemPrompt = buildSystemPrompt(spec);
-  const userPrompt = buildUserPrompt(spec, fields, hints);
+  const userPrompt = buildUserPrompt(spec, fields, hints, charcs);
 
   // Rasmlarni bir marta tayyorlaymiz — ikkala provayder ham shuni ishlatadi
   const images = await Promise.all(imageUrls.slice(0, 4).map(toInlineImage));
@@ -296,7 +467,29 @@ export async function fillFieldsFromImages(
   }
 
   const parsed = parseJson(raw);
-  const { values, notes } = sanitize(fields, parsed);
 
-  return { values, provider, notes, tokensUsed: lastTokenUsage };
+  // Yangi javob {fields, charcs} ko'rinishida. Model eski (yassi) shaklda
+  // qaytarib qo'ysa ham ishlayveradi — kartochka to'ldirish to'xtab qolmasin.
+  const fieldPart = parsed.fields && typeof parsed.fields === 'object' ? parsed.fields : parsed;
+  const charcPart = parsed.charcs && typeof parsed.charcs === 'object' ? parsed.charcs : {};
+
+  const { values, notes } = sanitize(fields, fieldPart);
+  const { charcValues, notes: charcNotes } = sanitizeCharcs(charcs, charcPart);
+
+  if (allCharcs.length > charcs.length) {
+    charcNotes.push(
+      `Kategoriyada ${allCharcs.length} ta xususiyat bor — AI eng muhim ${charcs.length} tasini to'ldirdi, qolganini o'zingiz kiriting`,
+    );
+  }
+
+  return {
+    values,
+    charcValues,
+    provider,
+    notes: [...notes, ...charcNotes],
+    tokensUsed: lastTokenUsage,
+  };
 }
+
+/** Testlar uchun — tashqaridan chaqirilmaydi */
+export const __internal = { sanitizeCharcs, buildCharcSpecText, toNumberOrNull };

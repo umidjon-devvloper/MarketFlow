@@ -186,10 +186,27 @@ export async function adaptImage(req: Request, res: Response, next: NextFunction
 // AI bilan maydonlarni to'ldirish
 // ============================================
 
+/**
+ * Kategoriya xarakteristikasi — frontend allaqachon yuklab olgan ro'yxatni
+ * qaytarib yuboradi. Qaytadan marketplace'dan so'ramaymiz: bu ikkinchi tashqi
+ * chaqiruv va yana bir kutish demak edi.
+ */
+const charcInputSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1).max(300),
+  type: z.enum(['number', 'string']),
+  required: z.boolean().default(false),
+  unit: z.string().max(60).optional(),
+  maxCount: z.number().int().min(0).max(200).default(1),
+  popular: z.boolean().optional(),
+});
+
 const aiFillSchema = z.object({
   marketplace: z.string(),
   imageUrls: z.array(z.string().url()).min(1).max(4),
   hints: z.record(z.string(), z.string()).default({}),
+  /** Kategoriyaga bog'liq dinamik maydonlar (WB) — bo'lsa ular ham to'ldiriladi */
+  charcs: z.array(charcInputSchema).max(300).default([]),
 });
 
 export async function aiFill(req: Request, res: Response, next: NextFunction) {
@@ -203,7 +220,7 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
 
     await assertAiQuota(organizationId);
 
-    const result = await fillFieldsFromImages(body.imageUrls, spec, body.hints);
+    const result = await fillFieldsFromImages(body.imageUrls, spec, body.hints, body.charcs);
 
     await recordAiJob({
       organizationId,
@@ -214,7 +231,11 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
       inputUrl: body.imageUrls[0],
       tokensUsed: result.tokensUsed,
       costUsd: estimateTextCost(result.tokensUsed),
-      metadata: { marketplace: spec.id, filled: Object.keys(result.values).length },
+      metadata: {
+        marketplace: spec.id,
+        filled: Object.keys(result.values).length,
+        charcsFilled: Object.keys(result.charcValues).length,
+      },
     });
 
     const quota = await getQuotaStatus(organizationId);
@@ -894,8 +915,8 @@ export async function exportExcel(req: Request, res: Response, next: NextFunctio
       return res.send(buffer);
     }
 
-    // Wildberries'да ham o'z Excel shabloni bor (3636 ustun, "Загрузить из файла"
-    // aynan shu strukturани kutadi). Uzum'дагидек tayyorini to'ldiramiz —
+    // Wildberries'da ham o'z Excel shabloni bor (3636 ustun, "Загрузить из файла"
+    // aynan shu strukturani kutadi). Uzum'dagidek tayyorini to'ldiramiz —
     // hozircha "Игрушки" (o'yinchoqlar) shabloni.
     if (spec.id === 'WB') {
       const { buffer, warnings } = fillWbTemplate(
@@ -996,7 +1017,7 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
     const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
     if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
     if (spec.id !== 'WB') {
-      // Hozircha faqat WB; Ozon/Yandex keyingi bosqichда
+      // Hozircha faqat WB; Ozon/Yandex keyingi bosqichda
       return res.json({ marketplace: spec.id, charcs: [] });
     }
 

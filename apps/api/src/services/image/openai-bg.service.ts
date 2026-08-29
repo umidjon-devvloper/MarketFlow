@@ -77,7 +77,7 @@ export async function removeBackgroundOpenAI(
     } catch {
       /* JSON emas — o'z holicha */
     }
-    // Ko'p uchraydigan sabablarni aniq ataймиз
+    // Ko'p uchraydigan sabablarni aniq ataymiz
     if (res.status === 403) {
       reason = `tashkilotingiz gpt-image-1 uchun tasdiqlanmagan bo'lishi mumkin (${reason})`;
     } else if (res.status === 429) {
