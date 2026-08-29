@@ -24,7 +24,27 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
 // Refresh token oqimi
 let isRefreshing = false;
-let refreshQueue: Array<(token: string) => void> = [];
+/**
+ * Token yangilanayotganda kutib turgan so'rovlar.
+ *
+ * Avval bu yerda faqat `resolve` saqlanardi: yangilash MUVAFFAQIYATSIZ
+ * bo'lsa navbat hech qachon bo'shatilmasdi va kutayotgan so'rovlar abadiy
+ * osilib qolardi. Sahifada bir vaqtda 10+ so'rov ketadi, shuning uchun
+ * natija "hech narsa yuklanmayapti" bo'lib ko'rinardi.
+ */
+let refreshQueue: Array<{
+  resolve: (token: string) => void;
+  reject: (error: unknown) => void;
+}> = [];
+
+function flushQueue(token: string | null, error?: unknown) {
+  const queue = refreshQueue;
+  refreshQueue = [];
+  for (const item of queue) {
+    if (token) item.resolve(token);
+    else item.reject(error);
+  }
+}
 
 api.interceptors.response.use(
   (response) => response,
@@ -35,12 +55,15 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       if (isRefreshing) {
-        return new Promise((resolve) => {
-          refreshQueue.push((token: string) => {
-            if (originalRequest.headers) {
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-            }
-            resolve(api(originalRequest));
+        return new Promise((resolve, reject) => {
+          refreshQueue.push({
+            resolve: (token: string) => {
+              if (originalRequest.headers) {
+                originalRequest.headers.Authorization = `Bearer ${token}`;
+              }
+              resolve(api(originalRequest));
+            },
+            reject,
           });
         });
       }
@@ -49,6 +72,8 @@ api.interceptors.response.use(
       const refreshToken = useAuthStore.getState().refreshToken;
 
       if (!refreshToken) {
+        isRefreshing = false;
+        flushQueue(null, error);
         useAuthStore.getState().logout();
         if (typeof window !== 'undefined') window.location.href = '/login';
         return Promise.reject(error);
@@ -59,13 +84,15 @@ api.interceptors.response.use(
           refreshToken,
         });
         useAuthStore.getState().setAccessToken(data.accessToken);
-        refreshQueue.forEach((cb) => cb(data.accessToken));
-        refreshQueue = [];
+        flushQueue(data.accessToken);
         if (originalRequest.headers) {
           originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
         }
         return api(originalRequest);
       } catch (refreshError) {
+        // Kutayotganlarni ham bo'shatamiz — aks holda sahifa "yuklanmoqda"
+        // holatida qotib qoladi
+        flushQueue(null, refreshError);
         useAuthStore.getState().logout();
         if (typeof window !== 'undefined') window.location.href = '/login';
         return Promise.reject(refreshError);
