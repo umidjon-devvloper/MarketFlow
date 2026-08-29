@@ -11,6 +11,8 @@ import {
   Package,
   Trash2,
   Star,
+  Send,
+  AlertTriangle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPrice } from '@/lib/utils';
@@ -18,6 +20,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonPage } from '@/components/Skeleton';
 import { RemoteImage } from '@/components/RemoteImage';
+import { statusLabel, statusClass, canRepublish } from '@/lib/listingStatus';
 
 const MARKETPLACE_INFO = {
   UZUM: { name: 'Uzum', logo: '/logos/uzum.jpg' },
@@ -35,6 +38,8 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [processingImage, setProcessingImage] = useState<string | null>(null);
+  /** Qaysi marketplace'ga hozir yuborilyapti */
+  const [publishingMp, setPublishingMp] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -48,6 +53,31 @@ export default function ProductDetailPage() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  /**
+   * Kartochkani marketplace'ga qayta yuborish.
+   *
+   * Xato bo'lgan kartochkani qaytadan yuborishning yagona yo'li sehrgarni
+   * boshidan o'tish edi — sotuvchi xatoni ko'rib turib, hech narsa qila
+   * olmasdi. Backend allaqachon qayta yuborishni qo'llab-quvvatlaydi.
+   */
+  async function handleRepublish(marketplace: string) {
+    setPublishingMp(marketplace);
+    try {
+      const { data } = await api.post(`/cards/${productId}/publish/${marketplace}`);
+      toast('success', data.message || 'Yuborildi');
+      await load();
+    } catch (err: any) {
+      toast(
+        'error',
+        err.response?.data?.message || err.response?.data?.error || 'Yuborishda xato',
+      );
+      // Xato matni listing'ga yozildi — yangilangan holatni ko'rsatamiz
+      await load();
+    } finally {
+      setPublishingMp(null);
     }
   }
 
@@ -232,26 +262,51 @@ export default function ProductDetailPage() {
               const listing = product.listings?.find((l: any) => l.marketplace === mp);
               const info = MARKETPLACE_INFO[mp as keyof typeof MARKETPLACE_INFO];
               return (
-                <div
-                  key={mp}
-                  className="p-3 border rounded-lg flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2">
-                    <RemoteImage
-                      src={info.logo}
-                      alt={info.name}
-                      fit="contain"
-                      sizes="16px"
-                      className="w-4 h-4 rounded flex-shrink-0"
-                    />
-                    <span className="font-medium text-sm">{info.name}</span>
+                <div key={mp} className="p-3 border rounded-lg space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <RemoteImage
+                        src={info.logo}
+                        alt={info.name}
+                        fit="contain"
+                        sizes="16px"
+                        className="w-4 h-4 rounded flex-shrink-0"
+                      />
+                      <span className="font-medium text-sm truncate">{info.name}</span>
+                    </div>
+                    {listing ? (
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${statusClass(listing.status)}`}
+                      >
+                        {statusLabel(listing.status)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted flex-shrink-0">Yaratilmagan</span>
+                    )}
                   </div>
-                  {listing ? (
-                    <span className="text-xs bg-green-100 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded">
-                      {listing.status}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted">Yaratilmagan</span>
+
+                  {/* Nega rad etilgani — sotuvchi tuzatishi uchun */}
+                  {listing?.errorMessage && (
+                    <p className="flex gap-1.5 text-xs text-red-700 dark:text-red-300 break-words">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                      <span>{listing.errorMessage}</span>
+                    </p>
+                  )}
+
+                  {listing && canRepublish(listing.status) && (
+                    <button
+                      type="button"
+                      onClick={() => handleRepublish(mp)}
+                      disabled={publishingMp !== null}
+                      className="btn w-full justify-center px-3 py-1.5 text-xs font-medium border border-line hover:bg-panel transition disabled:opacity-50"
+                    >
+                      {publishingMp === mp ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      {publishingMp === mp ? 'Yuborilmoqda...' : 'Qayta yuborish'}
+                    </button>
                   )}
                 </div>
               );

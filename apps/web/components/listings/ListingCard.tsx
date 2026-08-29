@@ -5,6 +5,7 @@ import { Copy, Check, Edit2, Save, Loader2, Download, CopyPlus } from 'lucide-re
 import { api } from '@/lib/api';
 import { useToast } from '@/components/Toast';
 import { RemoteImage } from '@/components/RemoteImage';
+import { statusLabel, statusClass } from '@/lib/listingStatus';
 import { Listing, MARKETPLACE_INFO, MarketplaceId, errorText } from './constants';
 
 interface Props {
@@ -104,14 +105,8 @@ export function ListingCard({ listing, missing, onUpdate }: Props) {
             <RemoteImage src={info.logo} alt={info.name} fit="contain" sizes="32px" className="w-full h-full" />
           </span>
           <span className="font-semibold truncate">{info.name}</span>
-          <span
-            className={`px-2 py-0.5 rounded text-xs flex-shrink-0 ${
-              listing.status === 'PUBLISHED'
-                ? 'bg-green-100 text-emerald-700 dark:text-emerald-300'
-                : 'bg-paper text-ink-soft border'
-            }`}
-          >
-            {listing.status}
+          <span className={`px-2 py-0.5 rounded text-xs flex-shrink-0 ${statusClass(listing.status)}`}>
+            {statusLabel(listing.status)}
           </span>
         </div>
         <div className="flex gap-1 flex-shrink-0">
