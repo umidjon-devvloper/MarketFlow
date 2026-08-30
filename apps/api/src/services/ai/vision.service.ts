@@ -105,6 +105,8 @@ function buildSystemPrompt(spec: MarketplaceSpec, includeLongText: boolean): str
     `- Faqat rasmda ko'rinadigan narsaga asoslan. Ko'rinmasa — o'sha maydonni bo'sh satr ("") qoldir, o'ylab topma.`,
     `- Brend logotipi ko'rinmasa brendni taxmin qilma.`,
     `- Matn tili: ${spec.currency === 'UZS' ? "o'zbek tili (lotin)" : 'rus tili'}.`,
+    `  Ba'zi maydonlarda til alohida ko'rsatilgan — o'sha yerda ko'rsatilgan tilda yoz.`,
+    `  Ikki tilli juftliklarda (nomi RU / nomi UZ) matn TARJIMA bo'lsin, nusxa emas.`,
     `- Variantlari raqamlangan maydonlarda javob sifatida FAQAT raqamni yoz`,
     `  (masalan "2"), variant matnini emas. Mos variant bo'lmasa — bo'sh qoldir.`,
     `- Har bir maydonning belgi chegarasiga qat'iy rioya qil.`,
@@ -128,6 +130,12 @@ function buildFieldSpecText(fields: SpecField[]): string {
     .map((f) => {
       const parts = [`"${f.key}" — ${f.label}`];
       if (f.type === 'number') parts.push('(faqat son)');
+      if (f.lang) {
+        // Uzum kartochkasida ruscha va o'zbekcha matn alohida ustunlarda.
+        // Aytmasak model hammasini bitta tilda yozadi va ikkala ustunga
+        // bir xil matn tushadi.
+        parts.push(f.lang === 'ru' ? '(RUS TILIDA yoz)' : "(O'ZBEK TILIDA yoz)");
+      }
       if (f.type === 'category') {
         // Raqamli javob qoidasi faqat variantlari sanab o'tilgan maydonlarga
         // tegishli. Model uni kategoriyaga ham qo'llab, "1" deb yozib

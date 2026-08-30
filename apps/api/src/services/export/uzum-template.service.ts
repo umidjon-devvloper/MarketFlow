@@ -21,6 +21,7 @@
 import fs from 'fs';
 import path from 'path';
 import { unzipSync, zipSync } from 'fflate';
+import { staticWbValue } from '../marketplace/wb-dictionary.service';
 
 /** Shablon fayli — Uzum kabinetidan olingan asl nusxa */
 const TEMPLATE_FILE = 'uzum-template.xlsm';
@@ -73,6 +74,8 @@ interface TemplateColumn {
   /** Uzum chegarasi (belgi) */
   maxLength?: number;
   required?: boolean;
+  /** Qiymatni shablonga yozishdan oldin o'girish */
+  transform?: (raw: any) => any;
 }
 
 export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
@@ -85,7 +88,15 @@ export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
   { col: 'F', header: 'id категории', key: null, type: 'text' },
   { col: 'G', header: 'Бренд', key: 'brand', type: 'text', required: true },
   { col: 'H', header: 'Модель', key: 'model', type: 'text' },
-  { col: 'I', header: 'Страна производства', key: 'country', type: 'text', required: true },
+  // Shablon ruscha to'ldiriladi: "Xitoy" emas, "Китай"
+  {
+    col: 'I',
+    header: 'Страна производства',
+    key: 'country',
+    type: 'text',
+    required: true,
+    transform: (raw: any) => staticWbValue(raw) || raw,
+  },
   { col: 'J', header: 'Описание товара RU', key: 'descriptionRu', type: 'text', maxLength: 5000, required: true },
   { col: 'K', header: 'Описание товара UZ', key: 'descriptionUz', type: 'text', maxLength: 5000, required: true },
   { col: 'L', header: 'Краткое описание RU', key: 'shortRu', type: 'text', maxLength: 390, required: true },
@@ -315,6 +326,10 @@ export function fillUzumTemplate(rows: UzumExportRow[], template?: Buffer): Uzum
         column.key === '__images__'
           ? row.imageUrls.filter(Boolean).join('\n')
           : row.values[column.key];
+
+      if (column.transform && value !== undefined && value !== null && String(value).trim() !== '') {
+        value = column.transform(value);
+      }
 
       if (column.maxLength && typeof value === 'string' && value.length > column.maxLength) {
         warnings.push({

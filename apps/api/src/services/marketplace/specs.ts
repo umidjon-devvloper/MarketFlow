@@ -56,6 +56,14 @@ export interface SpecField {
   /** Xato chiqqanda ko'rsatiladigan tushuntirish */
   patternHint?: string;
   /**
+   * Matn qaysi tilda bo'lishi kerak.
+   *
+   * Uzum kartochkasida ruscha va o'zbekcha nom/tavsif ALOHIDA ustunlar.
+   * Bu belgi bo'lmasa AI hamma maydonni bitta tilda yozardi va ikkala
+   * ustunga bir xil matn tushardi — kartochka yarim tilda qolardi.
+   */
+  lang?: 'ru' | 'uz';
+  /**
    * Variantlar statik emas, marketplace'dan kategoriyaga qarab olinadi.
    * 'wb-tnved' — GET /api/cards/categories/WB/tnved?subjectId=
    */
@@ -207,6 +215,7 @@ const UZUM: MarketplaceSpec = {
         },
         {
           key: 'title',
+          lang: 'ru',
           label: 'Mahsulot nomi',
           excelHeader: 'Mahsulot nomi',
           type: 'text',
@@ -219,6 +228,7 @@ const UZUM: MarketplaceSpec = {
         },
         {
           key: 'titleUz',
+          lang: 'uz',
           label: "Mahsulot nomi (o'zbekcha)",
           excelHeader: 'Название товара UZ',
           type: 'text',
@@ -250,6 +260,7 @@ const UZUM: MarketplaceSpec = {
         },
         {
           key: 'description',
+          lang: 'ru',
           label: 'Tavsif',
           excelHeader: 'Tavsif',
           type: 'textarea',
@@ -261,6 +272,7 @@ const UZUM: MarketplaceSpec = {
         },
         {
           key: 'descriptionUz',
+          lang: 'uz',
           label: "Tavsif (o'zbekcha)",
           excelHeader: 'Описание товара UZ',
           type: 'textarea',
@@ -271,6 +283,7 @@ const UZUM: MarketplaceSpec = {
         },
         {
           key: 'shortRu',
+          lang: 'ru',
           label: 'Qisqa tavsif (ruscha)',
           excelHeader: 'Краткое описание RU',
           type: 'textarea',
@@ -281,6 +294,7 @@ const UZUM: MarketplaceSpec = {
         },
         {
           key: 'shortUz',
+          lang: 'uz',
           label: "Qisqa tavsif (o'zbekcha)",
           excelHeader: 'Краткое описание UZ',
           type: 'textarea',
