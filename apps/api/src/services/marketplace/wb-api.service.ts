@@ -563,7 +563,13 @@ export async function findCardByVendorCode(
 
   // Zaxira: kursor bo'yicha varaqlash. WB matnli qidiruvni yangi
   // kartochkalarda darrov qo'llamasligi mumkin.
-  let cursor = direct.cursor;
+  //
+  // DIQQAT: varaqlashni BOSHIDAN boshlaymiz. Avval bu yerda matnli
+  // qidiruvdan qaytgan kursor ishlatilardi — u bo'sh natijaning kursori
+  // bo'lgani uchun varaqlash noto'g'ri joydan boshlanar va eng yangi
+  // kartochkalar umuman ko'rilmasdi. Natijada mavjud kartochka
+  // "topilmadi" deb belgilanib qolgan edi.
+  let cursor: { updatedAt?: string; nmID?: number } | undefined;
   for (let page = 0; page < 10; page++) {
     const res = await getCards(apiKey, {
       size: 100,
