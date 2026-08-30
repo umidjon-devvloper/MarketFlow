@@ -961,6 +961,21 @@ async function publishYandex(
     warnings.push('Yandex shtrix-kodni majburiy qiladi — barkodsiz tovar moderatsiyadan o\'tmasligi mumkin');
   }
 
+  /**
+   * Valyuta kabinetdan olinadi. Yandex Market bir nechta davlatda ishlaydi:
+   * .ru kabinetida RUR, .uz da UZS. Avval bu yerda "RUR" qattiq yozilgan
+   * edi va O'zbekiston kabinetida tovar yaratilmasdi —
+   * "Offer at index 0 should not have price with RUR currency".
+   */
+  let currencyId = 'RUR';
+  try {
+    const settings: any = await yandex.getBusinessSettings(creds.apiKey, businessId);
+    const fromApi = String(settings?.result?.settings?.currency ?? '').trim();
+    if (fromApi) currencyId = fromApi;
+  } catch (err: any) {
+    warnings.push(`Kabinet valyutasi aniqlanmadi (${err?.message}) — ${currencyId} yuborildi`);
+  }
+
   const countryRu = v.country ? staticWbValue(str(v, 'country')) : '';
   if (v.country && !countryRu) {
     warnings.push(`"${str(v, 'country')}" — Yandex ro'yxatida yo'q, davlat yuborilmadi`);
@@ -1035,7 +1050,7 @@ async function publishYandex(
             height: toApiUnits(spec, v, 'packHeight', 'sm'),
             weight: toApiUnits(spec, v, 'weight', 'kg'),
           },
-          basicPrice: { value: num(v, 'price'), currencyId: 'RUR' },
+          basicPrice: { value: num(v, 'price'), currencyId },
         },
       },
     ],

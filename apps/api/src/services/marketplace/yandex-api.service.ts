@@ -164,6 +164,21 @@ export function getCategoriesTree(apiKey: string, language = 'RU'): Promise<any>
 }
 
 /**
+ * POST /v2/businesses/{businessId}/settings — kabinet sozlamalari.
+ *
+ * Bizga faqat VALYUTA kerak. Yandex Market bir nechta davlatda ishlaydi va
+ * kabinet valyutasi shunga qarab farq qiladi: .ru da RUR, .uz da UZS.
+ * Narxni noto'g'ri valyutada yuborsak tovar yaratilmaydi —
+ * "Offer at index 0 should not have price with RUR currency".
+ */
+export function getBusinessSettings(apiKey: string, businessId: string | number): Promise<any> {
+  return yandexFetch(apiKey, `/v2/businesses/${businessId}/settings`, {
+    method: 'POST',
+    body: {},
+  });
+}
+
+/**
  * POST /v2/category/{categoryId}/parameters — shu kategoriyaning xarakteristikalari.
  *
  * Qaytgan `parameters` ro'yxatidan `required: true` bo'lganlari kartochkada
