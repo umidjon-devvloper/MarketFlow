@@ -305,46 +305,80 @@ function rank(options: CategoryOption[], query: string, limit: number): Category
   // DIQQAT: bu yerda o'zak EMAS, to'liq so'z ishlatiladi.
   //
   // O'zak so'rovni juda qisqartiradi: "платье" → "плат", va shundan keyin
-  // "Платья" ham, "Платки" ham, "Платежные браслеты" ham bir xil darajada
-  // mos ko'rinadi. To'liq so'z bilan taqqoslasak umumiy boshlanish uzunligi
-  // farq qiladi: "платье"↔"платья" = 5, "платье"↔"платки" = 4 —
-  // ya'ni to'g'ri javob o'zi yuqoriga chiqadi.
+  // "Платья" ham, "Платки" ham bir xil darajada mos ko'rinadi. To'liq so'z
+  // bilan umumiy boshlanish uzunligi farq qiladi va to'g'ri javob o'zi
+  // yuqoriga chiqadi.
   //
-  // O'zak faqat WB'ning server tomonidagi qidiruvi uchun kerak (wbSearch).
-  const parts = normalize(query).split(' ').filter(Boolean);
+  // Ilgari bu yerda faqat OXIRGI so'z bo'yicha saralanardi. Ruscha
+  // kategoriyalarda esa asosiy so'z boshida turadi: "Футболка поло мужская"
+  // so'rovi "мужская" bo'yicha saralanib, natijada "Электробритвы мужские"
+  // yuqoriga chiqar, "Поло для взрослых" esa 30 talik ro'yxatga umuman
+  // tushmasdi. Endi HAR BIR so'z bo'yicha alohida saralanadi va natijalar
+  // aralashtiriladi — to'g'ri javob ro'yxatga albatta tushadi, qaysi biri
+  // ekanini esa AI tanlaydi.
+  const parts = normalize(query).split(' ').filter((p) => p.length >= 2);
   if (!parts.length) return options.slice(0, limit);
 
-  const head = parts[parts.length - 1];
-  const rest = parts.slice(0, -1);
-  const scored: Array<{ option: CategoryOption; score: number }> = [];
-
-  for (const option of options) {
+  const scoreFor = (option: CategoryOption, head: string): number => {
     const name = normalize(option.name);
     const nameHit = bestWordMatch(name, head);
     const pathHit = nameHit.length >= MIN_STEM ? nameHit : bestWordMatch(normalize(option.path), head);
+    if (pathHit.length < Math.min(head.length, MIN_STEM)) return 0;
 
-    // O'zak to'liq topilmasa — bu boshqa narsa
-    if (pathHit.length < Math.min(head.length, MIN_STEM)) continue;
-
-    // Umumiy boshlanish qancha uzun bo'lsa, moslik shuncha aniq:
-    // "плать" ↔ "платья" = 5, "плать" ↔ "платки" = 4
     let score = pathHit.length * 20;
     if (nameHit.length >= MIN_STEM) score += 40;
     if (nameHit.atStart && nameHit.length >= MIN_STEM) score += 60;
 
-    for (const part of rest) {
+    // Qolgan so'zlar — qo'shimcha dalil
+    for (const part of parts) {
+      if (part === head) continue;
       if (bestWordMatch(name, part).length >= Math.min(part.length, MIN_STEM)) score += 25;
       else if (bestWordMatch(normalize(option.path), part).length >= Math.min(part.length, MIN_STEM)) score += 10;
     }
 
     // Teng ballarni ajratish uchun — qisqaroq nom biroz ustun
-    score -= Math.min(name.length, 60) / 30;
+    return score - Math.min(name.length, 60) / 30;
+  };
 
-    scored.push({ option, score });
+  // Har so'z uchun alohida reyting
+  const perWord = parts.map((head) => {
+    const scored: Array<{ option: CategoryOption; score: number }> = [];
+    for (const option of options) {
+      const score = scoreFor(option, head);
+      if (score > 0) scored.push({ option, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  });
+
+  // Navbat bilan olamiz: har so'zning eng yaxshisi ro'yxatga tushsin
+  const chosen = new Map<string, number>();
+  for (let i = 0; chosen.size < limit; i++) {
+    let added = false;
+    for (const list of perWord) {
+      const hit = list[i];
+      if (!hit) continue;
+      added = true;
+      const key = `${hit.option.id}:${hit.option.typeId ?? ''}`;
+      const best = chosen.get(key);
+      if (best === undefined || hit.score > best) chosen.set(key, hit.score);
+      if (chosen.size >= limit) break;
+    }
+    if (!added) break;
   }
 
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map((s) => s.option);
+  const byKey = new Map<string, CategoryOption>();
+  for (const list of perWord) {
+    for (const { option } of list) {
+      byKey.set(`${option.id}:${option.typeId ?? ''}`, option);
+    }
+  }
+
+  return [...chosen.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([key]) => byKey.get(key)!)
+    .filter(Boolean)
+    .slice(0, limit);
 }
 
 /**
