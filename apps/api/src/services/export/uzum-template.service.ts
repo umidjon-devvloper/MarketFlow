@@ -79,6 +79,8 @@ interface TemplateColumn {
   transform?: (raw: any) => any;
   /** Shablon ichidagi ma'lumotnoma — qiymat aynan shu ro'yxatdan bo'lishi shart */
   ref?: keyof UzumReferences;
+  /** Ro'yxatdagi prefiksli yozuvdan katakka nima yozilsin */
+  refWrite?: 'full' | 'suffix';
 }
 
 export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
@@ -116,7 +118,7 @@ export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
   { col: 'V', header: 'ИКПУ', key: 'mxik', type: 'text', required: true },
   // Rang ham ruscha ustun: "Bej" emas, "бежевый"
   { col: 'W', header: 'Цвет', key: 'color', type: 'text', transform: (raw: any) => staticWbValue(raw) || raw, ref: 'colors' },
-  { col: 'X', header: 'Размер', key: 'size', type: 'text', ref: 'sizes' },
+  { col: 'X', header: 'Размер', key: 'size', type: 'text', ref: 'sizes', refWrite: 'suffix' },
   { col: 'Y', header: 'Цена продажи (som)', key: 'price', type: 'number', required: true },
   { col: 'Z', header: 'Цена до скидки (som)', key: 'oldPrice', type: 'number', required: true },
   { col: 'AA', header: 'Вес (г)', key: 'weight', type: 'number', required: true },
@@ -267,6 +269,33 @@ function templatePath(): string {
 }
 
 /**
+ * Shablon shu kategoriyaniki emasligini aniqlash.
+ *
+ * Uzum shabloni bitta kategoriya uchun tayyorlanadi: AE dan keyingi ustunlar
+ * va ulardagi ochiluvchi ro'yxatlar makros orqali o'sha kategoriyaga qarab
+ * yoziladi. Uzum esa bu ustunlarni NOMI bo'yicha emas, TARTIBI bo'yicha
+ * o'qiydi — shuning uchun ustunlar to'plami yoki tartibi farq qilsa,
+ * fayl "пропущены обязательные характеристики" deb rad etiladi.
+ * Buni sinovda ko'rdik: kategoriya "Футболки с коротким рукавом" uchta
+ * xususiyat kutardi, shablonda esa to'rttasi bor edi.
+ *
+ * Mos kelmasa — kategoriyaning kutilgan xususiyatlari qaytariladi.
+ */
+function templateFilterMismatch(category: UzumCategoryRef, template?: Buffer): string[] {
+  if (!category.filters.length) return [];
+
+  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  const inTemplate = uzumCharacteristics(template).map((c) => norm(c.name));
+  if (!inTemplate.length) return [];
+
+  const expected = category.filters.map(norm);
+  const same =
+    expected.length === inTemplate.length && expected.every((f, i) => f === inTemplate[i]);
+
+  return same ? [] : category.filters;
+}
+
+/**
  * Bir nechta o'lcham — bir nechta qator.
  *
  * Uzum shablonida bitta qator = bitta variant. "M,L,XL" deb bitta katakka
@@ -393,6 +422,22 @@ export function fillUzumTemplate(inputRows: UzumExportRow[], template?: Buffer):
           "kategoriya aniqlanmadi — faylni ochib ochiluvchi ro'yxatdan tanlang, " +
           "aks holda Uzum 'kategoriya ko'rsatilmagan' deb rad etadi",
       });
+    } else {
+      // Xususiyat ustunlari (AE dan boshlab) shablonga QAT'IY bog'langan:
+      // ularni Uzum makrosi kategoriya tanlanganda yozadi. Shablon boshqa
+      // kategoriyaniki bo'lsa, fayl "пропущены обязательные характеристики"
+      // deb rad etiladi — buni oldindan aytamiz.
+      const expected = templateFilterMismatch(category, template);
+      if (expected.length) {
+        warnings.push({
+          row: rowNum,
+          column: 'Обязательные характеристики',
+          message:
+            `shablon "${category.title}" kategoriyasiniki emas — Uzum bu yerda ` +
+            `${expected.join(', ')} kutadi. Kabinetdan shu kategoriya shablonini ` +
+            "yuklab oling va \"Shablon yuklash\" orqali qo'shing, aks holda Uzum faylni rad etadi",
+        });
+      }
     }
 
     for (const column of UZUM_TEMPLATE_COLUMNS) {
@@ -421,7 +466,7 @@ export function fillUzumTemplate(inputRows: UzumExportRow[], template?: Buffer):
       // "Бежевый", "No name" emas — "No Name". Mos kelmasa bo'sh qoldiramiz:
       // ro'yxatdan tashqari qiymat butun faylni rad ettiradi.
       if (column.ref && value !== undefined && value !== null && String(value).trim() !== '') {
-        const matched = matchReference(String(value), refs[column.ref]);
+        const matched = matchReference(String(value), refs[column.ref], column.refWrite);
         if (matched.value) {
           value = matched.value;
         } else {
@@ -538,6 +583,8 @@ export interface UzumCategoryRef {
   title: string;
   /** To'liq yo'l (ruscha) — qidiruvda va tanlovda ko'rsatiladi */
   path: string;
+  /** Shu kategoriya uchun Uzum talab qiladigan xususiyatlar (filtrlar) */
+  filters: string[];
 }
 
 export interface UzumReferences {
@@ -601,7 +648,7 @@ export function uzumCategories(template?: Buffer): UzumCategoryRef[] {
 
   // Har bir kategoriya filtri uchun alohida qator bor — ID bo'yicha yig'amiz
   const rows = new Map<number, Record<string, string>>();
-  for (const m of sheet.matchAll(/<c r="([A-C])(\d+)"([^>]*)>(?:<v>([^<]*)<\/v>)?<\/c>/g)) {
+  for (const m of sheet.matchAll(/<c r="([A-E])(\d+)"([^>]*)>(?:<v>([^<]*)<\/v>)?<\/c>/g)) {
     const rowNum = Number(m[2]);
     if (rowNum < 2) continue;
     const value = / t="s"/.test(m[3]) ? shared[Number(m[4])] : m[4];
@@ -614,11 +661,17 @@ export function uzumCategories(template?: Buffer): UzumCategoryRef[] {
   const byId = new Map<string, UzumCategoryRef>();
   for (const row of rows.values()) {
     if (!row.A || !row.B) continue;
-    if (byId.has(row.A)) continue;
+    const found = byId.get(row.A);
+    if (found) {
+      // Bir kategoriyaning har bir filtri alohida qatorda turadi
+      if (row.E && !found.filters.includes(row.E)) found.filters.push(row.E);
+      continue;
+    }
     byId.set(row.A, {
       id: row.A,
       title: row.B,
       path: (row.C ?? row.B).replace(/&gt;/g, '>').replace(/&amp;/g, '&'),
+      filters: row.E ? [row.E] : [],
     });
   }
 
@@ -636,16 +689,31 @@ export function uzumCategories(template?: Buffer): UzumCategoryRef[] {
  * yoqasi) tanlab qo'ymaymiz: noto'g'ri o'lcham bilan sotuvga chiqqan tovar
  * qaytarib olinadi, bo'sh katak esa faqat ogohlantirish beradi.
  */
-export function matchReference(value: string, list: string[]): { value: string | null; ambiguous: boolean } {
+export function matchReference(
+  value: string,
+  list: string[],
+  /**
+   * Ro'yxatdagi yozuv prefiksli bo'lsa ("Размер одежды:M"), katakka nima
+   * tushsin: to'liq yozuvmi yoki ikki nuqtadan keyingi qismmi.
+   *
+   * O'lchamda — faqat qismi. To'liq yozuvni yuborib ko'rdik, Uzum uni
+   * "Not valid Sku Titles from SkuDto!" deb rad etadi: prefiks ochiluvchi
+   * ro'yxatdagi guruh nomi, tovarning o'lchami emas.
+   */
+  write: 'full' | 'suffix' = 'full',
+): { value: string | null; ambiguous: boolean } {
   const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  const bare = (item: string) => (item.includes(':') ? item.split(':').slice(1).join(':') : item);
+  const out = (item: string) => (write === 'suffix' ? bare(item) : item);
+
   const target = norm(value);
   if (!target) return { value: null, ambiguous: false };
 
   const exact = list.find((item) => norm(item) === target);
-  if (exact) return { value: exact, ambiguous: false };
+  if (exact) return { value: out(exact), ambiguous: false };
 
-  const bySuffix = list.filter((item) => item.includes(':') && norm(item.split(':').slice(1).join(':')) === target);
-  if (bySuffix.length === 1) return { value: bySuffix[0], ambiguous: false };
+  const bySuffix = list.filter((item) => item.includes(':') && norm(bare(item)) === target);
+  if (bySuffix.length === 1) return { value: out(bySuffix[0]), ambiguous: false };
   if (bySuffix.length > 1) return { value: null, ambiguous: true };
 
   return { value: null, ambiguous: false };

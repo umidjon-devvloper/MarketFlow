@@ -105,9 +105,12 @@ describe('Uzum shabloni', () => {
       toUzumRow({ ...baseValues, sku: 'POLO', skuGroup: 'POLO', size: 'M,L,XL' }, ['https://a.jpg']),
     ]);
     const rows = readSheet(buffer);
-    expect(cell(rows, 'X', 4)).toBe('Размер одежды:M');
-    expect(cell(rows, 'X', 5)).toBe('Размер одежды:L');
-    expect(cell(rows, 'X', 6)).toBe('Размер одежды:XL');
+    // Ro'yxatda "Размер одежды:M" turadi, katakka esa faqat o'lchamning
+    // o'zi yoziladi: prefiks — ochiluvchi ro'yxatdagi guruh nomi, Uzum uni
+    // qiymat sifatida qabul qilmaydi ("Not valid Sku Titles from SkuDto!").
+    expect(cell(rows, 'X', 4)).toBe('M');
+    expect(cell(rows, 'X', 5)).toBe('L');
+    expect(cell(rows, 'X', 6)).toBe('XL');
     expect(cell(rows, 'B', 4)).toBe('POLO-M');
     expect(cell(rows, 'D', 4)).toBe('POLO');
     expect(cell(rows, 'D', 6)).toBe('POLO');
@@ -218,6 +221,18 @@ describe('Uzum shabloni', () => {
       toUzumRow({ ...baseValues, price: 400 }, ['https://a.jpg']),
     ]);
     expect(Number(cell(readSheet(buffer), 'Y', 4))).toBe(1000);
+  });
+
+  it("shablon boshqa kategoriyaniki bo'lsa ogohlantiradi", () => {
+    // Uzum xususiyat ustunlarini nomi bo'yicha emas, tartibi bo'yicha o'qiydi.
+    // Shablon boshqa kategoriyaniki bo'lsa, fayl yuklashda
+    // "пропущены обязательные характеристики" deb rad etiladi.
+    const category = uzumCategories().find((c) => c.filters.length)!;
+    const { warnings } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, category: category.title }, ['https://a.jpg']),
+    ]);
+    const hit = warnings.find((w) => w.column.includes('характеристики'));
+    if (hit) expect(hit.message).toContain(category.filters[0]);
   });
 
   it('kategoriya topilganda ortiqcha ogohlantirish bermaydi', () => {
