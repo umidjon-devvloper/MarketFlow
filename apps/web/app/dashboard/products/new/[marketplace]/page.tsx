@@ -170,7 +170,9 @@ export default function NewCardPage() {
   const [exporting, setExporting] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
-  const [publishResult, setPublishResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [publishResult, setPublishResult] = useState<{ success: boolean; message: string; pending?: boolean } | null>(null);
+  /** WB kartochkani asinxron yaratadi — natija kutilayotganini ko'rsatamiz */
+  const [finalizing, setFinalizing] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [prefillApplied, setPrefillApplied] = useState(false);
 
@@ -516,12 +518,45 @@ export default function NewCardPage() {
       const { data } = await api.post(`/cards/${savedId}/publish/${spec.id}`);
       setPublishResult(data);
       toast('success', data.message);
+
+      // WB kartochkani asinxron yaratadi: yuborilgan payt nmID hali yo'q va
+      // RASM biriktirilmaydi. Serverdagi cron buni keyin qilardi, lekin
+      // deploy serverless — u yerda cron yashamaydi. Shuning uchun natijani
+      // brauzer so'rab turadi; har chaqiruv qisqa va rasm tayyor bo'lishi
+      // bilan biriktiriladi.
+      if (data.pending && savedId) void pollPublishStatus(savedId, spec.id);
     } catch (err: any) {
       const message = err.response?.data?.message || err.response?.data?.error || 'Joylashda xato';
       setPublishResult({ success: false, message });
       toast('error', message);
     } finally {
       setPublishing(false);
+    }
+  };
+
+  /**
+   * Natijani so'rab turish. WB odatda 30 soniya — bir necha daqiqada
+   * yaratadi, shuning uchun 6 marta 20 soniyada tekshiramiz (2 daqiqa).
+   * Topilmasa ham xato emas: mahsulot sahifasida "Holatni tekshirish" bor.
+   */
+  const pollPublishStatus = async (productId: string, marketplace: string) => {
+    setFinalizing(true);
+    try {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        await new Promise((r) => setTimeout(r, 20000));
+        try {
+          const { data } = await api.get(`/cards/${productId}/publish-status/${marketplace}`);
+          if (!data.pending) {
+            setPublishResult(data);
+            toast(data.success ? 'success' : 'error', data.message);
+            return;
+          }
+        } catch {
+          // Tarmoq yoki limit — keyingi urinishda qayta so'raymiz
+        }
+      }
+    } finally {
+      setFinalizing(false);
     }
   };
 
@@ -1061,6 +1096,12 @@ export default function NewCardPage() {
                 }`}
               >
                 {publishResult.message}
+                {finalizing && (
+                  <span className="flex items-center gap-2 mt-2 text-xs opacity-80">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Kartochka yaratilishi va rasm biriktirilishi kutilmoqda...
+                  </span>
+                )}
               </div>
             )}
 

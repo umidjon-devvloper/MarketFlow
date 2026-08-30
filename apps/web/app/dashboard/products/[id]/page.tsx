@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -13,6 +13,7 @@ import {
   Star,
   Send,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPrice } from '@/lib/utils';
@@ -40,10 +41,25 @@ export default function ProductDetailPage() {
   const [processingImage, setProcessingImage] = useState<string | null>(null);
   /** Qaysi marketplace'ga hozir yuborilyapti */
   const [publishingMp, setPublishingMp] = useState<string | null>(null);
+  /** Qaysi marketplace holati tekshirilyapti */
+  const [checkingMp, setCheckingMp] = useState<string | null>(null);
+  /** Sahifa ochilganda kutilayotgan kartochkani bir marta o'zi tekshiradi */
+  const autoCheckedRef = useRef(false);
 
   useEffect(() => {
     load();
   }, [productId]);
+
+  // Kutilayotgan kartochka bo'lsa — bir marta o'zi tekshiradi. Sotuvchi
+  // "nega rasm yo'q" deb o'ylab o'tirmasin.
+  useEffect(() => {
+    if (autoCheckedRef.current || !product) return;
+    const pending = product.listings?.find((l: any) => l.status === 'PENDING');
+    if (!pending) return;
+    autoCheckedRef.current = true;
+    handleCheckStatus(pending.marketplace, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product]);
 
   async function load() {
     try {
@@ -78,6 +94,34 @@ export default function ProductDetailPage() {
       await load();
     } finally {
       setPublishingMp(null);
+    }
+  }
+
+  /**
+   * Joylash natijasini tekshirish — VA rasmlarni biriktirish.
+   *
+   * WB kartochkani asinxron yaratadi: yuborilgan payt nmID hali yo'q, rasm
+   * esa faqat nmID bilan biriktiriladi. Serverdagi cron buni o'zi qilardi,
+   * lekin deploy serverless muhitda — u yerda cron yashamaydi va kartochka
+   * abadiy "kutilmoqda" bo'lib, rasmsiz qolardi. Endi tekshiruvni brauzer
+   * so'raydi: har chaqiruv qisqa, timeout ham tegmaydi.
+   */
+  async function handleCheckStatus(marketplace: string, silent = false) {
+    setCheckingMp(marketplace);
+    try {
+      const { data } = await api.get(`/cards/${productId}/publish-status/${marketplace}`);
+      if (!silent || !data.pending) {
+        toast(data.pending ? 'info' : data.success ? 'success' : 'error', data.message);
+      }
+      await load();
+      return data.pending as boolean;
+    } catch (err: any) {
+      if (!silent) {
+        toast('error', err.response?.data?.error || err.response?.data?.message || 'Tekshirib bo\'lmadi');
+      }
+      return false;
+    } finally {
+      setCheckingMp(null);
     }
   }
 
@@ -291,6 +335,23 @@ export default function ProductDetailPage() {
                       <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                       <span>{listing.errorMessage}</span>
                     </p>
+                  )}
+
+                  {/* Kutilmoqda — natijani so'rash va rasmni biriktirish */}
+                  {listing?.status === 'PENDING' && (
+                    <button
+                      type="button"
+                      onClick={() => handleCheckStatus(mp)}
+                      disabled={checkingMp !== null}
+                      className="btn w-full justify-center px-3 py-1.5 text-xs font-medium border border-line hover:bg-panel transition disabled:opacity-50"
+                    >
+                      {checkingMp === mp ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      {checkingMp === mp ? 'Tekshirilmoqda...' : 'Holatni tekshirish'}
+                    </button>
                   )}
 
                   {listing && canRepublish(listing.status) && (
