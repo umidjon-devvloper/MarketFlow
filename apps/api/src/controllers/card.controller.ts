@@ -359,6 +359,13 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
       where: { organizationId, marketplace: spec.id as Marketplace, isActive: true },
     });
 
+    // Bir-ikki belgili raqam — bu kategoriya nomi emas, modelning xatosi.
+    // Bunday qiymat bilan katalogni qidirish behuda.
+    if (/^\d{1,3}$/.test(String(result.values.category ?? '').trim())) {
+      delete result.values.category;
+      result.notes.push("AI kategoriyani aniqlay olmadi — katalogdan o'zingiz tanlang");
+    }
+
     if (cred && spec.id !== 'UZUM' && result.values.category && !resolvedCategoryId) {
       try {
         const options = await searchCategories(

@@ -128,6 +128,12 @@ function buildFieldSpecText(fields: SpecField[]): string {
     .map((f) => {
       const parts = [`"${f.key}" — ${f.label}`];
       if (f.type === 'number') parts.push('(faqat son)');
+      if (f.type === 'category') {
+        // Raqamli javob qoidasi faqat variantlari sanab o'tilgan maydonlarga
+        // tegishli. Model uni kategoriyaga ham qo'llab, "1" deb yozib
+        // yuborardi — keyin bunday nom katalogdan topilmasdi.
+        parts.push('(kategoriya NOMINI yoz, raqam emas)');
+      }
       if (f.type === 'textarea' && (f.maxLength ?? 0) >= 1000) {
         parts.push(`(kamida ${MIN_LONG_TEXT} belgi, max ${f.maxLength})`);
       } else if (f.maxLength) {
