@@ -688,17 +688,30 @@ async function publishWb(
     // cron'ida bo'ladi (kartochka WB tomonida hali yo'q), lekin mavjud
     // kartochkada nmID bor — kutishning hojati yo'q. Aks holda "Qayta
     // yuborish" bosilaveradi-yu, rasm hech qachon bormasdi.
+    let mediaPending = false;
     if (input.imageUrls.length) {
       try {
         await wb.saveMedia(creds.apiKey, existing.nmID, input.imageUrls);
       } catch (err: any) {
-        warnings.push(`Rasmlar biriktirilmadi (${err?.message ?? 'xato'}) — keyinroq qayta urinib ko'ring`);
+        // Limit — vaqtincha. Kartochkani "joylandi" deb yopib qo'ysak,
+        // rasm biriktirish uchun qayta urinish yo'li qolmaydi: sotuvchida
+        // rasmsiz, lekin "muvaffaqiyatli" kartochka qoladi.
+        mediaPending = err?.status === 429 || /limit/i.test(String(err?.message ?? ''));
+        warnings.push(
+          mediaPending
+            ? "WB so'rov limiti — rasmlar bir daqiqadan keyin avtomatik biriktiriladi"
+            : `Rasmlar biriktirilmadi (${err?.message ?? 'xato'}) — keyinroq qayta urinib ko'ring`,
+        );
       }
     }
 
     return {
       success: true,
-      message: `Kartochka yangilandi (nmID ${existing.nmID}). WB o'zgarishni bir necha daqiqada qabul qiladi.`,
+      pending: mediaPending,
+      taskId: mediaPending ? vendorCode : undefined,
+      message: mediaPending
+        ? `Kartochka yangilandi (nmID ${existing.nmID}) — rasmlar biriktirilishi kutilmoqda.`
+        : `Kartochka yangilandi (nmID ${existing.nmID}). WB o'zgarishni bir necha daqiqada qabul qiladi.`,
       warnings,
       raw: { nmID: existing.nmID },
     };

@@ -1236,6 +1236,26 @@ export async function publishStatus(req: Request, res: Response, next: NextFunct
       imageUrls,
     );
 
+    /**
+     * Uzoq vaqt "kutilmoqda" — demak kartochka yo'q.
+     *
+     * WB kartochkani daqiqalar ichida yaratadi. Agar yarim soatdan keyin ham
+     * topilmasa, u yaratilmagan yoki keyin o'chirilgan. Avval bunday holat
+     * abadiy "sinxronlanmoqda" bo'lib qolardi: sotuvchi tekshiraveradi va
+     * hech narsa o'zgarmaydi, sababini ham bilmaydi.
+     */
+    const pendingMs = Date.now() - listing.updatedAt.getTime();
+    if (result.pending && pendingMs > 30 * 60 * 1000) {
+      const message =
+        `WB'da "${listing.externalId}" artikuli topilmadi. Kartochka yaratilmagan ` +
+        "yoki keyin o'chirilgan — qaytadan yuboring.";
+      await prisma.listing.update({
+        where: { id: listing.id },
+        data: { status: 'ERROR', errorMessage: message },
+      });
+      return res.json({ success: false, pending: false, message });
+    }
+
     // Yakuniy natija bo'lsa listing holatini yopamiz
     if (!result.pending) {
       await prisma.listing.update({
