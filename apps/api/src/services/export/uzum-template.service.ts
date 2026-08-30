@@ -348,6 +348,38 @@ export function fillUzumTemplate(rows: UzumExportRow[]): UzumExportResult {
       cells.push(buildCell(column.col, rowNum, value, column.type, styles.get(column.col)));
     }
 
+    // Kategoriya xususiyatlari (AE dan boshlab). Ular shablonning o'zidan
+    // o'qiladi va formada to'ldiriladi — avval bu ustunlar bo'sh chiqib,
+    // sotuvchi ularni Excel ichida qo'lda tanlashi kerak edi.
+    const charcValues = row.values.uzumCharacteristics;
+    if (charcValues && typeof charcValues === 'object') {
+      for (const charc of uzumCharacteristics()) {
+        const raw = (charcValues as Record<string, unknown>)[String(charc.id)];
+        const text = String(raw ?? '').trim();
+        if (!text) continue;
+
+        // Ro'yxatdan tashqari qiymat Uzum validatsiyasidan o'tmaydi
+        const allowed = text
+          .split(',')
+          .map((part) => part.trim())
+          .filter((part) => charc.options.some((o) => o.toLowerCase() === part.toLowerCase()))
+          .slice(0, charc.maxCount);
+
+        if (!allowed.length) {
+          warnings.push({
+            row: rowNum,
+            column: charc.name,
+            message: `"${text}" ro'yxatda yo'q — bo'sh qoldirildi`,
+          });
+          continue;
+        }
+
+        cells.push(
+          buildCell(charc.column, rowNum, allowed.join(', '), 'text', styles.get(charc.column)),
+        );
+      }
+    }
+
     const attrs = match[1].replace(/\s*\/$/, '');
     xml = xml.replace(rowRe, `<row${attrs}>${cells.join('')}</row>`);
   });
@@ -363,4 +395,109 @@ export function fillUzumTemplate(rows: UzumExportRow[]): UzumExportResult {
 export function uzumFileName(count: number): string {
   const stamp = new Date().toISOString().slice(0, 10);
   return `uzum-${count}-mahsulot-${stamp}.xlsm`;
+}
+
+// ─── KATEGORIYA XUSUSIYATLARI ────────────────────────────
+
+/**
+ * Shablonning o'zidan kategoriya xususiyatlarini o'qish.
+ *
+ * Uzum shablonida AE ustunidan boshlab kategoriyaga xos maydonlar turadi:
+ * 2-qatorda nomi ("Основной материал"), 3-qatorda tanlov turi ("выбор
+ * одного" / "выбор нескольких"), ruxsat etilgan qiymatlar esa `_cache`
+ * varag'ida, ustunga biriktirilgan `FilterList_*` diapazonida.
+ *
+ * Ya'ni ma'lumotnoma faylning ichida — API ham, tarmoq ham kerak emas.
+ * Avval bu ustunlar bo'sh chiqardi va sotuvchi ularni Excel ichida qo'lda
+ * to'ldirishi kerak edi; endi formada ko'rinadi va AI to'ldiradi.
+ */
+export interface UzumCharacteristic {
+  /** Ustun raqami (AE = 31) — qiymat shu ustunga yoziladi */
+  id: number;
+  column: string;
+  name: string;
+  maxCount: number;
+  options: string[];
+}
+
+function columnIndex(col: string): number {
+  return col.split('').reduce((acc, ch) => acc * 26 + (ch.charCodeAt(0) - 64), 0);
+}
+
+let cachedCharcs: UzumCharacteristic[] | null = null;
+
+export function uzumCharacteristics(): UzumCharacteristic[] {
+  if (cachedCharcs) return cachedCharcs;
+
+  const zip = unzipSync(new Uint8Array(fs.readFileSync(templatePath())));
+  const text = (p: string) => (zip[p] ? Buffer.from(zip[p]).toString('utf8') : '');
+
+  const shared = [...text('xl/sharedStrings.xml').matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) =>
+    (m[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, '')).join(''),
+  );
+  const sheet = text(SHEET_PATH);
+
+  const rowCells = (rowNum: number): Map<string, string> => {
+    const row = sheet.match(new RegExp(`<row[^>]*r="${rowNum}"[\\s\\S]*?</row>`))?.[0] ?? '';
+    const out = new Map<string, string>();
+    for (const c of row.matchAll(/<c r="([A-Z]+)\d+"[^>]*?(?: t="(\w+)")?[^>]*>(?:<v>([^<]*)<\/v>)?/g)) {
+      const value = c[2] === 's' ? shared[Number(c[3])] : c[3];
+      if (value) out.set(c[1], String(value));
+    }
+    return out;
+  };
+
+  const names = rowCells(2);
+  const modes = rowCells(3);
+
+  const validation = new Map<string, string>();
+  for (const dv of sheet.matchAll(
+    /<dataValidation[^>]*sqref="([A-Z]+)\d+:[A-Z]+\d+"[^>]*>\s*<formula1>([^<]+)<\/formula1>/g,
+  )) {
+    validation.set(dv[1], dv[2]);
+  }
+
+  const ranges = new Map<string, string>();
+  for (const n of text('xl/workbook.xml').matchAll(
+    /<definedName name="([^"]+)"[^>]*>([^<]*)<\/definedName>/g,
+  )) {
+    ranges.set(n[1], n[2]);
+  }
+
+  const cacheSheet = text('xl/worksheets/sheet6.xml');
+  const valuesOf = (ref: string): string[] => {
+    const m = ref.match(/\$([A-Z]+)\$(\d+):\$[A-Z]+\$(\d+)/);
+    if (!m) return [];
+    const [, col, from, to] = m;
+    const out: string[] = [];
+    for (let r = Number(from); r <= Number(to); r++) {
+      const cell = cacheSheet.match(
+        new RegExp(`<c r="${col}${r}"[^>]*?(?: t="(\\w+)")?[^>]*>(?:<v>([^<]*)</v>)?`),
+      );
+      if (!cell) continue;
+      const value = cell[1] === 's' ? shared[Number(cell[2])] : cell[2];
+      if (value) out.push(String(value));
+    }
+    return out;
+  };
+
+  const out: UzumCharacteristic[] = [];
+  for (const [col, name] of names) {
+    // Xususiyatlar AE dan boshlanadi; undan oldingilari — qat'iy ustunlar
+    if (columnIndex(col) < columnIndex('AE')) continue;
+    const list = validation.get(col);
+    const options = list ? valuesOf(ranges.get(list) ?? '') : [];
+    if (!options.length) continue;
+
+    out.push({
+      id: columnIndex(col),
+      column: col,
+      name,
+      maxCount: /нескольких/i.test(modes.get(col) ?? '') ? 5 : 1,
+      options,
+    });
+  }
+
+  cachedCharcs = out;
+  return out;
 }

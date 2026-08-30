@@ -77,6 +77,7 @@ import {
   toUzumRow,
   uzumFileName,
   uzumMaxRows,
+  uzumCharacteristics,
 } from '../services/export/uzum-template.service';
 import { fillWbTemplate, toWbRow, wbFileName } from '../services/export/wb-template.service';
 
@@ -1169,8 +1170,19 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
     const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
     if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
     if (spec.id === 'UZUM') {
-      // Uzum Seller API'da kategoriya atributlari yo'q — Excel makrosi orqali
-      return res.json({ marketplace: spec.id, charcs: [] });
+      // Uzum'da API yo'q, lekin ma'lumotnoma shablonning ICHIDA: xususiyat
+      // nomlari va ruxsat etilgan qiymatlar o'sha faylda turadi. Kalit ham,
+      // kategoriya ham kerak emas.
+      const charcs = uzumCharacteristics().map((c) => ({
+        id: c.id,
+        name: c.name,
+        type: 'string' as const,
+        required: false,
+        maxCount: c.maxCount,
+        popular: true,
+        options: c.options,
+      }));
+      return res.json({ marketplace: spec.id, charcs });
     }
 
     const subjectId = Number(req.query.subjectId);

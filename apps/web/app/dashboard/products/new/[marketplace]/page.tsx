@@ -199,7 +199,8 @@ export default function NewCardPage() {
    */
   const subjectId = values.categoryId;
   const ozonTypeId = values.typeId;
-  const hasCategoryFields = spec?.id !== 'UZUM';
+  // Uzum'da ma'lumotnoma shablon ichida — kategoriya tanlash shart emas
+  const hasCategoryFields = true;
   const { data: charcData, isFetching: charcsLoading } = useQuery({
     queryKey: ['card-charcs', marketplace, subjectId, ozonTypeId],
     queryFn: async () =>
@@ -208,7 +209,9 @@ export default function NewCardPage() {
           params: { subjectId, ...(spec?.id === 'OZON' ? { typeId: ozonTypeId } : {}) },
         })
       ).data as { charcs: CharcField[] },
-    enabled: hasCategoryFields && !!subjectId && (spec?.id !== 'OZON' || !!ozonTypeId),
+    enabled:
+      !!spec &&
+      (spec.id === 'UZUM' || (!!subjectId && (spec.id !== 'OZON' || !!ozonTypeId))),
     staleTime: 30 * 60 * 1000,
   });
   const charcFields: CharcField[] = charcData?.charcs || [];
@@ -219,7 +222,9 @@ export default function NewCardPage() {
       ? 'ozonAttributes'
       : spec?.id === 'YANDEX'
         ? 'yandexParameters'
-        : 'wbCharacteristics';
+        : spec?.id === 'UZUM'
+          ? 'uzumCharacteristics'
+          : 'wbCharacteristics';
 
   // Tayyor qiymatlar va rasmlarni bir marta joylashtiramiz
   useEffect(() => {
@@ -971,7 +976,7 @@ export default function NewCardPage() {
           ))}
 
           {/* Kategoriyaga mos dinamik xarakteristikalar (WB) */}
-          {hasCategoryFields && values.categoryId && (charcFields.length > 0 || charcsLoading) && (
+          {(spec.id === 'UZUM' || values.categoryId) && (charcFields.length > 0 || charcsLoading) && (
             <div className="card p-6">
               <WbCharcFields
                 charcs={charcFields}
