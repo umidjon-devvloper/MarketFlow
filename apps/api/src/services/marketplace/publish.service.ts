@@ -292,6 +292,18 @@ async function findOzonDictionaryValue(
   text: string,
 ): Promise<number | null> {
   const target = normalizeName(text);
+
+  // Avval Ozon'ning o'z qidiruvi. Sahifalab o'qish yetarli emas edi:
+  // brendlar lug'ati bir necha mingta va "Нет бренда" birinchi 500 tada
+  // yo'q — qiymat topilmay, atribut jimgina tushib qolardi.
+  try {
+    const found = await ozon.searchAttributeValues(creds, categoryId, typeId, attributeId, text, 50);
+    const hit = found.find((r: any) => normalizeName(r?.value) === target);
+    if (hit) return Number(hit.id);
+  } catch {
+    // Qidiruv ishlamasa — pastdagi sahifalash zaxira yo'l
+  }
+
   let lastValueId = 0;
 
   // Lug'atlar uzun bo'lishi mumkin — bir necha sahifani ko'ramiz, lekin cheksiz emas
