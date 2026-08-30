@@ -976,6 +976,10 @@ async function publishYandex(
     warnings.push(`Kabinet valyutasi aniqlanmadi (${err?.message}) — ${currencyId} yuborildi`);
   }
 
+  const commodityCodes: Array<{ code: string; type: string }> = [];
+  if (str(v, 'mxik')) commodityCodes.push({ code: str(v, 'mxik'), type: 'IKPU_CODE' });
+  if (str(v, 'tnved')) commodityCodes.push({ code: str(v, 'tnved'), type: 'CUSTOMS_COMMODITY_CODE' });
+
   const countryRu = v.country ? staticWbValue(str(v, 'country')) : '';
   if (v.country && !countryRu) {
     warnings.push(`"${str(v, 'country')}" — Yandex ro'yxatida yo'q, davlat yuborilmadi`);
@@ -1038,6 +1042,11 @@ async function publishYandex(
           vendor: str(v, 'brand'),
           vendorCode: str(v, 'vendorCode') || undefined,
           barcodes: barcode ? [barcode] : undefined,
+          // Tovar kodlari. O'zbekiston kabinetida IKPU majburiy — usiz
+          // kartochka "Укажите код товара как в едином национальном
+          // каталоге" bilan qoladi. Turlar tekshirilgan: IKPU_CODE va
+          // CUSTOMS_COMMODITY_CODE qabul qilinadi, boshqasi 400 beradi.
+          ...(commodityCodes.length ? { commodityCodes } : {}),
           pictures: input.imageUrls,
           // Davlat nomi ruscha bo'lishi kerak: formadagi ro'yxat o'zbekcha
           // ("Xitoy") va uni shundayligicha yuborsak Yandex tanimaydi

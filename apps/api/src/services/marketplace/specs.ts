@@ -722,6 +722,17 @@ const YANDEX: MarketplaceSpec = {
         { key: 'country', label: 'Ishlab chiqarilgan davlat', excelHeader: 'Страна производства', type: 'select', required: true, options: COUNTRIES, aiFillable: true },
         { key: 'warranty', label: 'Kafolat muddati', excelHeader: 'Гарантийный срок, мес.', type: 'number', required: false, min: 0, unit: 'oy' },
         { key: 'tnved', label: 'TN VED kodi', excelHeader: 'ТН ВЭД', type: 'text', required: false, hint: 'AI topa olmaydi' },
+        {
+          key: 'mxik',
+          label: 'MXIK (IKPU) kodi',
+          excelHeader: 'ИКПУ',
+          type: 'text',
+          required: false,
+          // O'zbekiston kabinetida bu majburiy: usiz kartochka "Укажите код
+          // товара как в едином национальном каталоге" xatosi bilan qoladi.
+          // Rossiya kabinetida esa kerak emas, shuning uchun majburiy emas.
+          hint: "O'zbekiston kabineti uchun majburiy — soliq.uz milliy katalogidagi kod",
+        },
       ],
     },
     {
