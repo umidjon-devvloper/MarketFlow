@@ -394,6 +394,11 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
           result.values.category = matched.option.name;
           result.values.categoryId = matched.option.id;
           resolvedCategoryId = matched.option.id;
+          // Ozon'da kategoriya ikkita ID dan iborat: description_category_id
+          // va type_id. Ikkinchisisiz joylash umuman boshlanmaydi — AI
+          // kategoriyani topgan bo'lsa ham sotuvchi uni qo'lda qayta
+          // tanlashga majbur bo'lardi.
+          if (matched.option.typeId) result.values.typeId = matched.option.typeId;
           if (!matched.exact) {
             result.notes.push(
               `Kategoriya katalogdan tanlandi: "${matched.option.name}" — to'g'ri emasmi, o'zgartiring`,

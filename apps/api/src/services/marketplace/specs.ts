@@ -517,7 +517,7 @@ const OZON: MarketplaceSpec = {
         // type_id — bu 8229 atributining qiymati, alohida maydon emas.
         { key: 'categoryId', label: 'Kategoriya ID', excelHeader: '', type: 'text', required: false, publishRequired: true, hidden: true },
         { key: 'typeId', label: 'Tovar turi ID', excelHeader: '', type: 'text', required: false, publishRequired: true, hidden: true },
-        { key: 'title', label: 'Nomi (Название)', excelHeader: 'Название товара', type: 'text', required: true, maxLength: 200, mapsTo: 'title', aiFillable: true, hint: 'Tur + brend + model + rang/oʻlcham' },
+        { key: 'title', label: 'Nomi (Название)', excelHeader: 'Название товара', type: 'text', required: true, maxLength: 200, mapsTo: 'title', aiFillable: true, hint: 'Turi, brendi va asosiy xususiyati bir jumlada. Masalan: "Футболка мужская хлопковая бежевая"' },
         { key: 'sku', label: 'Artikul (Артикул)', excelHeader: 'Артикул', type: 'text', required: true, mapsTo: 'sku' },
         { key: 'brand', label: 'Brend (Бренд)', excelHeader: 'Бренд', type: 'text', required: true, mapsTo: 'brand', aiFillable: true, hint: 'Brend yo\'q bo\'lsa "Нет бренда"' },
         { key: 'description', label: 'Tavsif (Описание)', excelHeader: 'Описание', type: 'textarea', required: true, maxLength: 6000, mapsTo: 'description', aiFillable: true },

@@ -110,6 +110,11 @@ function buildSystemPrompt(spec: MarketplaceSpec, includeLongText: boolean): str
     `- Variantlari raqamlangan maydonlarda javob sifatida FAQAT raqamni yoz`,
     `  (masalan "2"), variant matnini emas. Mos variant bo'lmasa — bo'sh qoldir.`,
     `- Har bir maydonning belgi chegarasiga qat'iy rioya qil.`,
+    // Ozon nomida "Tur + brend + model" ko'rsatmasi bor edi va model uni
+    // aynan ko'chirib yozdi: "Футболка + Нет бренда + Модель + Бежевый".
+    `- Maydon izohi (— dan keyingi matn) — ko'rsatma, tayyor javob emas.`,
+    `  Uni ko'chirib yozma va "+" belgilari bilan qism-qism bo'lmasin —`,
+    `  o'qishga tayyor, tabiiy matn yoz.`,
     ...(includeLongText
       ? [
           `- TAVSIF — eng muhim maydon: qidiruv shu matnga qarab topadi va u UZUN bo'lishi shart.`,

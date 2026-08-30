@@ -200,9 +200,21 @@ async function buildOzonAttributes(
     const attr = candidates.map((c) => byName.get(normalizeName(c))).find(Boolean);
     if (!attr) continue;
 
-    // Lug'atli atribut: matn emas, qiymat identifikatori kutiladi
+    // Lug'atli atribut: matn emas, qiymat identifikatori kutiladi.
+    // Formadagi ro'yxatlar o'zbekcha ("Xitoy"), Ozon esa ruscha yozadi —
+    // shuning uchun o'zbekcha variantni ham, uning ruscha muqobilini ham
+    // sinab ko'ramiz. Aks holda maydon jimgina tushib qolardi.
     if (attr.dictionary_id > 0) {
-      const match = await findOzonDictionaryValue(creds, categoryId, typeId, attr.id, text);
+      const variants = [text, staticWbValue(text)].filter(
+        (v, i, arr) => v && arr.indexOf(v) === i,
+      );
+
+      let match: number | null = null;
+      for (const variant of variants) {
+        match = await findOzonDictionaryValue(creds, categoryId, typeId, attr.id, variant);
+        if (match) break;
+      }
+
       if (match) {
         attributes.push({ id: attr.id, complex_id: 0, values: [{ dictionary_value_id: match }] });
       } else {
