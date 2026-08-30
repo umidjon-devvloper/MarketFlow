@@ -1257,8 +1257,25 @@ export async function finalizePending(req: Request, res: Response, next: NextFun
       const adapted = listing.product.images.filter((i) => i.variant === 'WB');
       const imageUrls = (adapted.length ? adapted : listing.product.images).map((i) => i.url);
 
+      const attrs = (listing.product.attributes as any) || {};
+      const knownNmId = Number(attrs.wbNmId) || undefined;
+
       try {
-        const result = await checkPublishStatus(spec, creds, listing.externalId!, imageUrls);
+        const result = await checkPublishStatus(
+          spec,
+          creds,
+          listing.externalId!,
+          imageUrls,
+          knownNmId,
+        );
+
+        const foundNmId = Number((result.raw as any)?.nmID);
+        if (foundNmId && foundNmId !== knownNmId) {
+          await prisma.product.update({
+            where: { id: listing.productId },
+            data: { attributes: { ...attrs, wbNmId: foundNmId } },
+          });
+        }
 
         // Yarim soatdan beri topilmayapti — kartochka WB da yo'q (o'chirilgan
         // yoki umuman yaratilmagan). Bunday yozuv abadiy kutilib, har safar
@@ -1321,6 +1338,11 @@ export async function publishStatus(req: Request, res: Response, next: NextFunct
     const adapted = product.images.filter((i) => i.variant === (spec.id as any));
     const imageUrls = (adapted.length ? adapted : product.images).map((i) => i.url);
 
+    // Oldin topilgan nmID mahsulot atributlarida saqlanadi — qayta qidiruv
+    // WB so'rov limitidan yeydi va rasm biriktirishga budjet qoldirmaydi.
+    const attrs = (product.attributes as any) || {};
+    const knownNmId = Number(attrs.wbNmId) || undefined;
+
     const result = await checkPublishStatus(
       spec,
       {
@@ -1330,7 +1352,16 @@ export async function publishStatus(req: Request, res: Response, next: NextFunct
       },
       listing.externalId,
       imageUrls,
+      spec.id === 'WB' ? knownNmId : undefined,
     );
+
+    const foundNmId = Number((result.raw as any)?.nmID);
+    if (spec.id === 'WB' && foundNmId && foundNmId !== knownNmId) {
+      await prisma.product.update({
+        where: { id: product.id },
+        data: { attributes: { ...attrs, wbNmId: foundNmId } },
+      });
+    }
 
     /**
      * Uzoq vaqt "kutilmoqda" — demak kartochka yo'q.

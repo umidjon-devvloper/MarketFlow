@@ -809,8 +809,18 @@ export async function finalizeWbCard(
   apiKey: string,
   vendorCode: string,
   imageUrls: string[],
+  /**
+   * Oldin topilgan nmID. Berilsa kartochka qayta qidirilmaydi.
+   *
+   * Nega muhim: har qidiruv WB ning so'rov limitidan yeydi va rasm
+   * biriktirishga budjet qolmaydi — aynan shu sababli rasm "limitga yetdi"
+   * bilan qaytaverardi. nmID bir marta topilgach saqlab qo'yiladi.
+   */
+  knownNmId?: number,
 ): Promise<PublishResult> {
-  const card = await wb.findCardByVendorCode(apiKey, vendorCode);
+  const card = knownNmId
+    ? { nmID: knownNmId }
+    : await wb.findCardByVendorCode(apiKey, vendorCode);
 
   if (!card?.nmID) {
     // Xato ro'yxatida bo'lsa — sababi shu yerda (keshsiz, eng yangi holat)
@@ -992,6 +1002,8 @@ export async function checkPublishStatus(
   creds: PublishCreds,
   taskId: string,
   imageUrls: string[] = [],
+  /** WB uchun: oldin topilgan nmID (qayta qidirmaslik uchun) */
+  knownNmId?: number,
 ): Promise<PublishResult> {
   switch (spec.id) {
     case 'OZON': {
@@ -1021,7 +1033,7 @@ export async function checkPublishStatus(
     }
 
     case 'WB':
-      return finalizeWbCard(creds.apiKey, taskId, imageUrls);
+      return finalizeWbCard(creds.apiKey, taskId, imageUrls, knownNmId);
 
     default:
       return { success: true, message: 'Bu marketplace uchun holat tekshiruvi kerak emas' };
