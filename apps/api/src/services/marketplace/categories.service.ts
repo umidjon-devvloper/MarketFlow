@@ -467,6 +467,83 @@ export async function getWbCharacteristics(apiKey: string, subjectId: number): P
   return out;
 }
 
+/**
+ * Ozon atributlari — formadagi "Kategoriya xususiyatlari" uchun.
+ *
+ * WB dagi bilan bir xil vazifa: kategoriya tanlangach, aynan o'sha turga
+ * tegishli maydonlar ro'yxati keladi. Ozon buni "atribut" deb ataydi va
+ * ularsiz kartochka moderatsiyadan o'tmaydi — avval sotuvchi ularni
+ * to'ldira olmasdi, faqat "majburiy atribut bo'sh" ogohlantirishini ko'rardi.
+ */
+const OZON_COVERED_ATTRS = new Set([
+  'цвет товара',
+  'цвет',
+  'материал',
+  'страна изготовитель',
+  'страна производства',
+  'аннотация',
+  'описание',
+  'пол',
+  'размер',
+  'сезон',
+  'гарантийный срок',
+  'тн вэд',
+  'тнвэд',
+  'название товара',
+  'бренд',
+  'артикул',
+  'тип',
+]);
+
+const ozonAttrCache = new Map<string, { items: CharcField[]; expiresAt: number }>();
+
+export async function getOzonAttributes(
+  creds: CategoryCreds,
+  categoryId: number | string,
+  typeId: number | string,
+): Promise<CharcField[]> {
+  const key = `${categoryId}:${typeId}:${tokenId(creds.apiKey)}`;
+  const hit = ozonAttrCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.items;
+
+  if (!creds.apiSecret) throw new CategoryError("Ozon uchun Client-Id kerak");
+
+  const raw = await ozon.getCategoryAttributes(
+    { apiKey: creds.apiKey, clientId: creds.apiSecret },
+    Number(categoryId),
+    Number(typeId),
+  );
+
+  const out: CharcField[] = [];
+  for (const a of raw) {
+    const name = String(a?.name ?? '').trim();
+    if (!name || OZON_COVERED_ATTRS.has(normalize(name))) continue;
+    // "Тип товара" alohida yuboriladi — formada ko'rsatishning ma'nosi yo'q
+    if (Number(a?.id) === 8229) continue;
+
+    out.push({
+      id: Number(a.id),
+      name,
+      type: /integer|decimal|number/i.test(String(a?.type ?? '')) ? 'number' : 'string',
+      required: !!a?.is_required,
+      maxCount: a?.is_collection ? Number(a?.max_value_count) || 5 : 1,
+      // Ozon "aspect" deb belgilagan atributlar qidiruvda ishlatiladi —
+      // ular sotuvchi uchun ham muhimroq
+      popular: !!a?.is_aspect,
+    });
+  }
+
+  out.sort(
+    (a, b) =>
+      Number(b.required) - Number(a.required) ||
+      Number(b.popular) - Number(a.popular) ||
+      a.name.localeCompare(b.name, 'ru'),
+  );
+
+  if (out.length) ozonAttrCache.set(key, { items: out, expiresAt: Date.now() + TREE_TTL_MS });
+  return out;
+}
+
 /** TN VED ro'yxati predmet bo'yicha keshlanadi — u kunlab o'zgarmaydi */
 const tnvedCache = new Map<string, { items: Array<{ tnved: string; isKiz?: boolean }>; expiresAt: number }>();
 const TNVED_TTL_MS = 12 * 60 * 60 * 1000;
@@ -494,6 +571,7 @@ export async function getWbTnved(
 export function clearCategoryCache(): void {
   treeCache.clear();
   tnvedCache.clear();
+  ozonAttrCache.clear();
   inFlight.clear();
 }
 

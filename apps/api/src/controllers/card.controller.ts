@@ -47,6 +47,7 @@ import {
   searchCategories,
   getWbCharacteristics,
   getWbTnved,
+  getOzonAttributes,
   CategoryError,
 } from '../services/marketplace/categories.service';
 import {
@@ -1164,14 +1165,14 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
     const organizationId = req.organization!.id;
     const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
     if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
-    if (spec.id !== 'WB') {
-      // Hozircha faqat WB; Ozon/Yandex keyingi bosqichda
+    if (spec.id !== 'WB' && spec.id !== 'OZON') {
+      // Yandex kategoriya atributlarini boshqacha beradi — keyingi bosqichda
       return res.json({ marketplace: spec.id, charcs: [] });
     }
 
     const subjectId = Number(req.query.subjectId);
     if (!Number.isFinite(subjectId) || subjectId <= 0) {
-      throw new HttpError(400, 'subjectId noto\'g\'ri');
+      throw new HttpError(400, "subjectId noto'g'ri");
     }
 
     const cred = await prisma.userMarketplace.findFirst({
@@ -1179,6 +1180,24 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
     });
     if (!cred) {
       throw new HttpError(400, `${spec.name} ulanmagan — Marketplace'lar bo'limida API kalitni kiriting.`);
+    }
+
+    if (spec.id === 'OZON') {
+      // Ozon atributlari kategoriya VA tovar turi juftligiga bog'liq
+      const typeId = Number(req.query.typeId);
+      if (!Number.isFinite(typeId) || typeId <= 0) {
+        throw new HttpError(400, "Ozon uchun tovar turi (typeId) ham kerak — kategoriyani qaytadan tanlang");
+      }
+      const charcs = await getOzonAttributes(
+        {
+          apiKey: decrypt(cred.apiKey),
+          apiSecret: cred.apiSecret ? decrypt(cred.apiSecret) : null,
+          shopId: cred.shopId,
+        },
+        subjectId,
+        typeId,
+      );
+      return res.json({ marketplace: spec.id, subjectId, typeId, charcs });
     }
 
     const charcs = await getWbCharacteristics(decrypt(cred.apiKey), subjectId);

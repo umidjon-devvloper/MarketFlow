@@ -190,20 +190,31 @@ export default function NewCardPage() {
     enabled: !!fromProductId && !!marketplace,
   });
 
-  // Kategoriya tanlanganda WB'ning aynan o'sha predmeti xarakteristikalari
+  /**
+   * Kategoriya tanlanganda o'sha kategoriyaga tegishli maydonlar.
+   *
+   * WB buni "xarakteristika", Ozon "atribut" deb ataydi, lekin vazifasi bir
+   * xil va ularsiz kartochka moderatsiyadan o'tmaydi. Ozon uchun kategoriya
+   * yolg'iz yetarli emas — tovar turi (typeId) bilan juftlikda so'raladi.
+   */
   const subjectId = values.categoryId;
+  const ozonTypeId = values.typeId;
+  const hasCategoryFields = spec?.id === 'WB' || spec?.id === 'OZON';
   const { data: charcData, isFetching: charcsLoading } = useQuery({
-    queryKey: ['card-charcs', marketplace, subjectId],
+    queryKey: ['card-charcs', marketplace, subjectId, ozonTypeId],
     queryFn: async () =>
       (
         await api.get(`/cards/categories/${marketplace}/charcs`, {
-          params: { subjectId },
+          params: { subjectId, ...(spec?.id === 'OZON' ? { typeId: ozonTypeId } : {}) },
         })
       ).data as { charcs: CharcField[] },
-    enabled: spec?.id === 'WB' && !!subjectId,
+    enabled: hasCategoryFields && !!subjectId && (spec?.id !== 'OZON' || !!ozonTypeId),
     staleTime: 30 * 60 * 1000,
   });
   const charcFields: CharcField[] = charcData?.charcs || [];
+
+  /** Qiymatlar qaysi kalitda saqlanadi — marketplace'ga qarab */
+  const charcValuesKey = spec?.id === 'OZON' ? 'ozonAttributes' : 'wbCharacteristics';
 
   // Tayyor qiymatlar va rasmlarni bir marta joylashtiramiz
   useEffect(() => {
@@ -211,7 +222,9 @@ export default function NewCardPage() {
 
     setValues((prev) => ({ ...prefill.values, ...prev }));
     // Oldin saqlangan dinamik xarakteristikalar (charcID → qiymat) bo'lsa yuklaymiz
-    const savedCharcs = (prefill.values as Record<string, unknown>)?.wbCharacteristics;
+    const savedCharcs =
+      (prefill.values as Record<string, unknown>)?.[charcValuesKey] ??
+      (prefill.values as Record<string, unknown>)?.wbCharacteristics;
     if (savedCharcs && typeof savedCharcs === 'object') {
       setWbCharcs(savedCharcs as Record<string, string>);
     }
@@ -485,7 +498,9 @@ export default function NewCardPage() {
       const payload = {
         marketplace: spec.id,
         // Kategoriyaga mos dinamik xarakteristikalarni ham qo'shamiz
-        values: Object.keys(wbCharcs).length ? { ...values, wbCharacteristics: wbCharcs } : values,
+        values: Object.keys(wbCharcs).length
+          ? { ...values, [charcValuesKey]: wbCharcs }
+          : values,
         images: images.map((img) => ({
           url: img.adapted?.url || img.url,
           fileKey: img.adapted?.fileKey || img.fileKey,
@@ -949,7 +964,7 @@ export default function NewCardPage() {
           ))}
 
           {/* Kategoriyaga mos dinamik xarakteristikalar (WB) */}
-          {spec.id === 'WB' && values.categoryId && (charcFields.length > 0 || charcsLoading) && (
+          {hasCategoryFields && values.categoryId && (charcFields.length > 0 || charcsLoading) && (
             <div className="card p-6">
               <WbCharcFields
                 charcs={charcFields}

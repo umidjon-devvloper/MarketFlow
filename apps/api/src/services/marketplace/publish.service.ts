@@ -216,6 +216,48 @@ async function buildOzonAttributes(
     attributes.push({ id: attr.id, complex_id: 0, values: [{ value: text }] });
   }
 
+  // Formadagi dinamik atributlar (atribut ID → qiymat). Qat'iy maydon
+  // yuborganini takrorlamaymiz.
+  const alreadySent = new Set(attributes.map((a) => a.id));
+  const dynamic = values.ozonAttributes;
+  if (dynamic && typeof dynamic === 'object') {
+    const byId = new Map<number, any>(catalog.map((a: any) => [Number(a.id), a]));
+    for (const [idStr, raw] of Object.entries(dynamic as Record<string, unknown>)) {
+      const id = Number(idStr);
+      if (!Number.isFinite(id) || alreadySent.has(id)) continue;
+      const attr = byId.get(id);
+      if (!attr) continue;
+
+      const parts = (Array.isArray(raw) ? raw : String(raw ?? '').split(','))
+        .map((x) => String(x).trim())
+        .filter(Boolean)
+        .slice(0, attr.is_collection ? Number(attr.max_value_count) || 5 : 1);
+      if (!parts.length) continue;
+
+      if (attr.dictionary_id > 0) {
+        // Lug'atli atribut: matn emas, qiymat identifikatori kutiladi
+        const ids: Array<{ dictionary_value_id: number }> = [];
+        for (const part of parts) {
+          const match = await findOzonDictionaryValue(creds, categoryId, typeId, attr.id, part);
+          if (match) ids.push({ dictionary_value_id: match });
+          else warnings.push(`"${part}" — Ozon'ning "${attr.name}" ro'yxatida yo'q, yuborilmadi`);
+        }
+        if (ids.length) {
+          attributes.push({ id: attr.id, complex_id: 0, values: ids });
+          alreadySent.add(attr.id);
+        }
+        continue;
+      }
+
+      attributes.push({
+        id: attr.id,
+        complex_id: 0,
+        values: parts.map((value) => ({ value })),
+      });
+      alreadySent.add(attr.id);
+    }
+  }
+
   // Majburiy, lekin to'ldirilmagan atributlarni sotuvchiga aytamiz —
   // Ozon aks holda tushunarsiz xato bilan rad etadi
   const sent = new Set(attributes.map((a) => a.id));
