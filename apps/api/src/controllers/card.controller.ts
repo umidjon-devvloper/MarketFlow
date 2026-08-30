@@ -621,6 +621,15 @@ const saveSchema = z.object({
   marketplace: z.string(),
   values: z.record(z.string(), z.any()),
   images: z.array(imageSchema).min(1, 'Kamida bitta rasm kerak'),
+  /**
+   * Shu kartochka allaqachon saqlangan bo'lsa — uni YANGILAYMIZ.
+   *
+   * Ilgari saqlashdan keyin sehrgarda kiritilgan har qanday o'zgarish
+   * (kategoriyani qayta tanlash, xususiyatlarni to'ldirish) bazaga
+   * yetib bormasdi: tugma "Saqlandi" bo'lib o'chib qolardi, qayta
+   * yuborilganda esa "bu SKU band" xatosi chiqardi.
+   */
+  productId: z.string().optional(),
 });
 
 /** Spec qiymatlaridan Product ustunlarini yig'ish */
@@ -661,7 +670,7 @@ export async function saveCard(req: Request, res: Response, next: NextFunction) 
     const sku: string | null = mapped.sku ?? null;
     if (sku) {
       const taken = await prisma.product.findFirst({
-        where: { organizationId, sku },
+        where: { organizationId, sku, ...(body.productId ? { NOT: { id: body.productId } } : {}) },
         select: { id: true, title: true },
       });
       if (taken) {
@@ -670,6 +679,50 @@ export async function saveCard(req: Request, res: Response, next: NextFunction) 
           `"${sku}" artikuli allaqachon ishlatilgan ("${taken.title}"). Boshqa artikul kiriting.`,
         );
       }
+    }
+
+    if (body.productId) {
+      const existing = await prisma.product.findFirst({
+        where: { id: body.productId, organizationId },
+        select: { id: true },
+      });
+      if (!existing) throw new HttpError(404, 'Mahsulot topilmadi');
+
+      const updated = await prisma.$transaction(async (tx) => {
+        // Rasmlar to'liq almashtiriladi: tartibi ham, asosiysi ham o'zgargan
+        // bo'lishi mumkin, qo'shimchasini esa aniqlash uchun ishonchli kalit yo'q
+        await tx.productImage.deleteMany({ where: { productId: body.productId! } });
+
+        return tx.product.update({
+          where: { id: body.productId! },
+          data: {
+            title,
+            description,
+            category,
+            brand: mapped.brand ?? null,
+            sku,
+            barcode: mapped.barcode ?? null,
+            basePrice,
+            currency: spec.currency,
+            stock: Number(mapped.stock ?? 0),
+            attributes: { marketplace: spec.id, values: body.values },
+            images: {
+              create: body.images.map((img, index) => ({
+                url: img.url,
+                originalUrl: img.originalUrl || img.url,
+                fileKey: img.fileKey ?? null,
+                isPrimary: index === 0,
+                order: index,
+                isAiProcessed: img.isAdapted,
+                variant: img.isAdapted ? (spec.id as any) : ('ORIGINAL' as const),
+              })),
+            },
+          },
+          include: { images: true, listings: true },
+        });
+      });
+
+      return res.json({ product: updated });
     }
 
     const product = await prisma.product.create({

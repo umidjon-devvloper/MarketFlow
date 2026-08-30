@@ -511,6 +511,9 @@ export default function NewCardPage() {
       const payload = {
         marketplace: spec.id,
         values: valuesWithCharcs(),
+        // Saqlangandan keyin ham tahrirlash mumkin — yangisini yaratmay,
+        // shu kartochkani yangilaymiz
+        ...(savedId && !fromProductId ? { productId: savedId } : {}),
         images: images.map((img) => ({
           url: img.adapted?.url || img.url,
           fileKey: img.adapted?.fileKey || img.fileKey,
@@ -526,7 +529,7 @@ export default function NewCardPage() {
         : await api.post('/cards', payload);
 
       setSavedId(fromProductId || data.product.id);
-      toast('success', 'Kartochka saqlandi');
+      toast('success', savedId ? 'Kartochka yangilandi' : 'Kartochka saqlandi');
     } catch (err: any) {
       toast('error', err.response?.data?.error || 'Saqlashda xato');
     } finally {
@@ -1090,12 +1093,12 @@ export default function NewCardPage() {
 
             <button
               onClick={handleSave}
-              disabled={saving || !!savedId}
+              disabled={saving}
               className="btn w-full py-3 font-semibold text-white shadow-btn transition hover:shadow-btn-hover disabled:opacity-50"
               style={{ background: spec.color }}
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              {savedId ? 'Saqlandi' : 'Kartochkani saqlash'}
+              {savedId ? 'Qayta saqlash' : 'Kartochkani saqlash'}
             </button>
 
             <button
