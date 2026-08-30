@@ -1203,6 +1203,79 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
  * Bu endpoint haqiqiy natijani so'raydi; WB uchun u ayni paytda rasmlarni
  * biriktirish qadamini ham bajaradi (nmID faqat shu paytda paydo bo'ladi).
  */
+/**
+ * POST /api/cards/finalize-pending
+ *
+ * Kutilayotgan WB kartochkalarini yakunlaydi: nmID ni topib, rasmlarni
+ * biriktiradi va holatni yopadi.
+ *
+ * Nega kerak: WB kartochkani asinxron yaratadi va rasm faqat keyin
+ * biriktiriladi. Buni cron qilardi, lekin deploy serverless muhitda —
+ * u yerda cron yashamaydi. Sehrgardagi kutish esa sotuvchi sahifada
+ * turganida ishlaydi; u boshqa sahifaga o'tsa yoki tabni yopsa, kartochka
+ * rasmsiz qolardi. Shuning uchun ilovaning istalgan sahifasi ochilganda
+ * shu chaqiruv yuboriladi va "qarzlar" yopiladi.
+ */
+export async function finalizePending(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+
+    const cred = await prisma.userMarketplace.findFirst({
+      where: { organizationId, marketplace: 'WB', isActive: true },
+    });
+    if (!cred) return res.json({ checked: 0, finished: 0 });
+
+    // Yangi yuborilganini darrov so'ramaymiz: WB ga kartochkani yaratish
+    // uchun vaqt kerak. Bir marta ko'p ish qilmaymiz — WB so'rov limiti bor.
+    const listings = await prisma.listing.findMany({
+      where: {
+        marketplace: 'WB',
+        status: 'PENDING',
+        externalId: { not: null },
+        updatedAt: { lt: new Date(Date.now() - 90_000) },
+        product: { organizationId },
+      },
+      orderBy: { updatedAt: 'asc' },
+      take: 3,
+      include: { product: { include: { images: { orderBy: { order: 'asc' } } } } },
+    });
+    if (!listings.length) return res.json({ checked: 0, finished: 0 });
+
+    const spec = getSpec('WB')!;
+    const creds = {
+      apiKey: decrypt(cred.apiKey),
+      apiSecret: cred.apiSecret ? decrypt(cred.apiSecret) : null,
+      shopId: cred.shopId,
+    };
+
+    let finished = 0;
+    for (const listing of listings) {
+      const adapted = listing.product.images.filter((i) => i.variant === 'WB');
+      const imageUrls = (adapted.length ? adapted : listing.product.images).map((i) => i.url);
+
+      try {
+        const result = await checkPublishStatus(spec, creds, listing.externalId!, imageUrls);
+        if (!result.pending) {
+          finished++;
+          await prisma.listing.update({
+            where: { id: listing.id },
+            data: result.success
+              ? { status: 'PUBLISHED', lastSyncedAt: new Date(), errorMessage: null }
+              : { status: 'ERROR', errorMessage: result.message },
+          });
+        }
+      } catch {
+        // Limit yoki tarmoq — keyingi chaqiruvda qayta urinamiz
+      }
+    }
+
+    res.json({ checked: listings.length, finished });
+  } catch (err: any) {
+    if (err?.name === 'DecryptionError') return next(new HttpError(409, err.message));
+    next(err);
+  }
+}
+
 export async function publishStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const organizationId = req.organization!.id;

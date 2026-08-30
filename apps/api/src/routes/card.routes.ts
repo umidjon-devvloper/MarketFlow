@@ -31,6 +31,7 @@ router.get('/categories/:marketplace/tnved', controller.getCategoryTnved);
 router.get('/:productId/prefill/:marketplace', controller.prefillCard);
 router.post('/:productId/listings', controller.addListing);
 router.post('/:productId/publish/:marketplace', controller.publishCard);
+router.post('/finalize-pending', controller.finalizePending);
 router.get('/:productId/publish-status/:marketplace', controller.publishStatus);
 
 // Bir nechta kartochkaga bitta kategoriyani birdan qo'yish

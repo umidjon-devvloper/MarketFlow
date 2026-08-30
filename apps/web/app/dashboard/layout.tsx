@@ -9,6 +9,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { AppBackground } from '@/components/AppBackground';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Avatar } from '@/components/RemoteImage';
+import { api } from '@/lib/api';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -31,6 +32,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push('/dashboard/organizations/new');
     }
   }, [hydrated, isAuthenticated, organizations, router]);
+
+  /**
+   * Kutilayotgan WB kartochkalarini yakunlash — "qarzlarni" yopish.
+   *
+   * WB kartochkani asinxron yaratadi va rasm faqat keyin biriktiriladi.
+   * Buni cron qilardi, lekin deploy serverless muhitda — u yerda cron
+   * yashamaydi. Sehrgardagi kutish ham sotuvchi o'sha sahifada turgandagina
+   * ishlaydi: u boshqa sahifaga o'tsa yoki tabni yopsa, kartochka rasmsiz
+   * qolardi. Endi ilovaning istalgan sahifasi ochilganda shu chaqiruv
+   * yuboriladi. Javobi kutilmaydi — foydalanuvchini ushlab turmasin.
+   */
+  const finalizeRef = useRef(false);
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated || finalizeRef.current) return;
+    finalizeRef.current = true;
+    api.post('/cards/finalize-pending').catch(() => {});
+  }, [hydrated, isAuthenticated]);
 
   // ⌘K / Ctrl+K — qidiruvga fokus
   useEffect(() => {
