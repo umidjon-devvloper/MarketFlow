@@ -164,6 +164,26 @@ export function getCategoriesTree(apiKey: string, language = 'RU'): Promise<any>
 }
 
 /**
+ * POST /v2/businesses/{businessId}/offer-cards/update — kartochka
+ * xarakteristikalari.
+ *
+ * DIQQAT: parametrlar offer-mappings/update orqali YUBORILMAYDI. U so'rov
+ * xatosiz o'tadi, lekin parametrlar kartochkaga tushmaydi — jimgina
+ * yo'qoladi (tekshirilgan: javob 200, kartochkada parameterValues bo'sh).
+ * Ular aynan shu endpoint orqali yuboriladi.
+ */
+export function updateOfferCards(
+  apiKey: string,
+  businessId: string,
+  offersContent: unknown[],
+): Promise<any> {
+  return yandexFetch(apiKey, `/v2/businesses/${businessId}/offer-cards/update`, {
+    method: 'POST',
+    body: { offersContent },
+  });
+}
+
+/**
  * POST /v2/businesses/{businessId}/settings — kabinet sozlamalari.
  *
  * Bizga faqat VALYUTA kerak. Yandex Market bir nechta davlatda ishlaydi va

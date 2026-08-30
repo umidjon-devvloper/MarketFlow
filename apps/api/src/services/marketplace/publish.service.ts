@@ -1042,7 +1042,6 @@ async function publishYandex(
           // Davlat nomi ruscha bo'lishi kerak: formadagi ro'yxat o'zbekcha
           // ("Xitoy") va uni shundayligicha yuborsak Yandex tanimaydi
           manufacturerCountries: countryRu ? [countryRu] : undefined,
-          ...(parameterValues.length ? { parameterValues } : {}),
           // Yandex santimetr va kilogramm kutadi
           weightDimensions: {
             length: toApiUnits(spec, v, 'packLength', 'sm'),
@@ -1061,6 +1060,20 @@ async function publishYandex(
     raw = await yandex.updateOfferMappings(creds.apiKey, businessId, body);
   } catch (err: any) {
     return { success: false, message: `Yandex rad etdi: ${err?.message || err}`, warnings, raw: err };
+  }
+
+  // Parametrlar ALOHIDA chaqiruv bilan ketadi. offer-mappings ularni qabul
+  // qilgandek 200 qaytaradi, lekin kartochkaga tushirmaydi — tekshirilgan:
+  // so'rov muvaffaqiyatli o'tdi, kartochkada esa parameterValues bo'sh edi.
+  if (parameterValues.length) {
+    try {
+      await yandex.updateOfferCards(creds.apiKey, businessId, [
+        // categoryId majburiy — usiz Yandex "must not be null" deb rad etadi
+        { offerId: str(v, 'sku'), categoryId: marketCategoryId, parameterValues },
+      ]);
+    } catch (err: any) {
+      warnings.push(`Kategoriya parametrlari yuborilmadi (${err?.message}) — kabinetdan to'ldiring`);
+    }
   }
 
   return {
