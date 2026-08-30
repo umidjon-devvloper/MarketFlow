@@ -1180,7 +1180,17 @@ export async function checkPublishStatus(
 
       if (failed.length) {
         const reasons = failed
-          .flatMap((i) => (i.errors || []).map((e: any) => e?.message || e?.code))
+          .flatMap((i) =>
+            (i.errors || []).map((e: any) => {
+              const text = e?.message || e?.description || e?.code;
+              // Ozon qaysi stavka to'g'ri ekanini aytmaydi, do'konlarda esa
+              // ro'yxat har xil: RU da 20%, O'zbekistonda ko'pincha 0%.
+              if (e?.code === 'vat_invalid') {
+                return `${text} Ozon bu do'kon uchun tanlangan stavkani qabul qilmadi — 0% ni sinab ko'ring`;
+              }
+              return text;
+            }),
+          )
           .filter(Boolean);
         return {
           success: false,
