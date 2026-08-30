@@ -536,13 +536,14 @@ export default function NewCardPage() {
 
   /**
    * Natijani so'rab turish. WB odatda 30 soniya — bir necha daqiqada
-   * yaratadi, shuning uchun 6 marta 20 soniyada tekshiramiz (2 daqiqa).
+   * yaratadi, ustiga so'rov limitiga ham tushib qolishi mumkin (u daqiqalik).
+   * Shuning uchun 10 marta 20 soniyada tekshiramiz (~3 daqiqa).
    * Topilmasa ham xato emas: mahsulot sahifasida "Holatni tekshirish" bor.
    */
   const pollPublishStatus = async (productId: string, marketplace: string) => {
     setFinalizing(true);
     try {
-      for (let attempt = 0; attempt < 6; attempt++) {
+      for (let attempt = 0; attempt < 10; attempt++) {
         await new Promise((r) => setTimeout(r, 20000));
         try {
           const { data } = await api.get(`/cards/${productId}/publish-status/${marketplace}`);

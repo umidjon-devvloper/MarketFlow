@@ -822,6 +822,22 @@ export async function finalizeWbCard(
   try {
     await wb.saveMedia(apiKey, card.nmID, imageUrls);
   } catch (err: any) {
+    // WB so'rov limiti — bu VAQTINCHA holat, natija emas. Avval biz uni
+    // yakuniy xato deb qaytarardik: tekshiruv to'xtar va kartochka rasmsiz
+    // qolardi, holbuki bir daqiqadan keyin biriktirsa bo'lardi.
+    const rateLimited = err?.status === 429 || /limit/i.test(String(err?.message ?? ''));
+    if (rateLimited) {
+      return {
+        success: true,
+        pending: true,
+        taskId: vendorCode,
+        message:
+          `Kartochka yaratildi (nmID ${card.nmID}). WB so'rov limitiga yetdi — ` +
+          'rasmlar bir daqiqadan keyin avtomatik biriktiriladi.',
+        raw: card,
+      };
+    }
+
     return {
       success: false,
       message:
