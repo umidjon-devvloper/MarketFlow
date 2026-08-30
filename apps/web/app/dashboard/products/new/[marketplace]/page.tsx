@@ -510,10 +510,7 @@ export default function NewCardPage() {
     try {
       const payload = {
         marketplace: spec.id,
-        // Kategoriyaga mos dinamik xarakteristikalarni ham qo'shamiz
-        values: Object.keys(wbCharcs).length
-          ? { ...values, [charcValuesKey]: wbCharcs }
-          : values,
+        values: valuesWithCharcs(),
         images: images.map((img) => ({
           url: img.adapted?.url || img.url,
           fileKey: img.adapted?.fileKey || img.fileKey,
@@ -592,6 +589,16 @@ export default function NewCardPage() {
     }
   };
 
+  /**
+   * Saqlash va eksport bir xil qiymatlarni yuborishi shart.
+   *
+   * Ilgari kategoriya xususiyatlari faqat saqlashda qo'shilardi — kartochkani
+   * saqlamay Excel yuklab olgan sotuvchining faylida AE dan keyingi ustunlar
+   * bo'sh chiqardi va u buni faqat Uzum rad etgandan keyin bilardi.
+   */
+  const valuesWithCharcs = () =>
+    Object.keys(wbCharcs).length ? { ...values, [charcValuesKey]: wbCharcs } : values;
+
   const handleExport = async () => {
     if (!spec) return;
     setExporting(true);
@@ -600,7 +607,7 @@ export default function NewCardPage() {
         '/cards/export',
         savedId
           ? { marketplace: spec.id, productIds: [savedId] }
-          : { marketplace: spec.id, rows: [{ values, imageUrls: exportImageUrls }] },
+          : { marketplace: spec.id, rows: [{ values: valuesWithCharcs(), imageUrls: exportImageUrls }] },
         { responseType: 'blob' },
       );
       downloadBlob(res.data, fileNameFromResponse(res, `${spec.id.toLowerCase()}-kartochka.xlsx`));
