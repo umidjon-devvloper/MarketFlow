@@ -8,6 +8,8 @@
  *   3) 429 kelganda kutib qayta urinish, bo'lmasa eski keshni qaytarish.
  */
 
+import { reserveSlot } from './rate-limit-store';
+
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Kalit bo'yicha keyingi so'rovga ruxsat etilgan vaqt */
@@ -68,6 +70,17 @@ export function tokenId(apiKey: string): string {
   return String(hash);
 }
 
+/** Navbat band — chaqiruvchi buni "hozircha imkoni yo'q" deb tushunadi */
+export class QueueBusyError extends Error {
+  readonly status = 429;
+  constructor(public waitMs: number) {
+    super(
+      `Marketplace so'rov navbati band — ${Math.ceil(waitMs / 1000)} soniyadan keyin qayta urinib ko'ring`,
+    );
+    this.name = 'QueueBusyError';
+  }
+}
+
 // ─── ASOSIY O'RAM ────────────────────────────────────────
 
 export interface LimitedOptions<T> {
@@ -118,7 +131,33 @@ export async function limited<T>(opts: LimitedOptions<T>): Promise<T> {
     if (onQueueTooLong) throw onQueueTooLong(wait);
   }
 
-  const execute = () => (globalKey ? schedule(globalKey, globalGapMs, run) : run());
+  /**
+   * Bazadagi umumiy cheklov — barcha nusxalar uchun bitta navbat.
+   *
+   * Xotiradagi `schedule` faqat shu jarayon ichida ishlaydi; serverless
+   * muhitda esa har so'rov yangi jarayon, ya'ni u yerda cheklov yo'q edi.
+   * Shuning uchun so'rovdan oldin bazadan "o'rin" so'raymiz.
+   */
+  const reserve = async () => {
+    const slot = await reserveSlot(key, gapMs);
+    if (slot.ok) return;
+
+    // Qisqa kutish — shu yerda kutamiz. Uzoq bo'lsa kutib o'tirmaymiz:
+    // serverless funksiyasining o'z vaqt chegarasi bor.
+    if (slot.waitMs <= maxWaitMs) {
+      await sleep(slot.waitMs);
+      const second = await reserveSlot(key, gapMs);
+      if (second.ok) return;
+    }
+
+    if (cached) throw new QueueBusyError(slot.waitMs);
+    throw (onQueueTooLong?.(slot.waitMs) ?? new QueueBusyError(slot.waitMs));
+  };
+
+  const execute = async () => {
+    await reserve();
+    return globalKey ? schedule(globalKey, globalGapMs, run) : run();
+  };
 
   let result: T;
   try {

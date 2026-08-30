@@ -35,12 +35,16 @@ export class WbApiError extends Error {
 // ─── LIMITLAR ────────────────────────────────────────────
 
 /** Endpoint guruhlari — WB limitlari shu darajada hisoblanadi */
-type Bucket = 'ping' | 'cards' | 'orders' | 'sales' | 'stocks' | 'prices' | 'fbs';
+type Bucket = 'ping' | 'cards' | 'media' | 'orders' | 'sales' | 'stocks' | 'prices' | 'fbs';
 
 /** Ikki so'rov orasidagi minimal oraliq (ms) */
 const MIN_GAP_MS: Record<Bucket, number> = {
   ping: 1_000, // ~1 so'rov/sekund
   cards: 700, // 100 so'rov/daqiqa
+  // Rasm biriktirish — daqiqasiga ATIGI BITTA. Bu taxmin emas: WB javob
+  // sarlavhasida x-ratelimit-limit: 1 keladi. Tez-tez urinsak har uchala
+  // urinish ham 429 bo'ladi va rasm hech qachon biriktirilmaydi.
+  media: 61_000,
   orders: 61_000, // 1 so'rov/daqiqa
   sales: 61_000, // 1 so'rov/daqiqa
   stocks: 61_000, // 1 so'rov/daqiqa
@@ -56,6 +60,7 @@ const MIN_GAP_MS: Record<Bucket, number> = {
 const BUCKET_SCOPE: Record<Bucket, string> = {
   ping: '',
   cards: 'Kontent (Контент)',
+  media: 'Kontent (Контент)',
   orders: 'Statistika (Статистика)',
   sales: 'Statistika (Статистика)',
   stocks: 'Statistika (Статистика)',
@@ -66,6 +71,7 @@ const BUCKET_SCOPE: Record<Bucket, string> = {
 /** Javobni qancha vaqt keshda saqlash (ms) */
 const CACHE_TTL_MS: Record<Bucket, number> = {
   ping: 30_000,
+  media: 0, // rasm biriktirish keshlanmaydi
   cards: 60_000,
   // Statistics ma'lumoti WB tomonida ~30 daqiqada bir yangilanadi — tez-tez so'rashning ma'nosi yo'q
   orders: 10 * 60_000,
@@ -519,7 +525,7 @@ export async function saveMedia(
   return wbFetch(apiKey, `${WB_CONTENT}/content/v3/media/save`, {
     method: 'POST',
     body: { nmId, data: imageUrls },
-    bucket: 'cards',
+    bucket: 'media',
   });
 }
 

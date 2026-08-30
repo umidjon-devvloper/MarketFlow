@@ -635,6 +635,23 @@ model MarketplaceOrder {
 /// VALYUTA: raqobatchi narxi o'z bozori valyutasida (uzum.uz — UZS,
 /// wildberries.ru — RUB). O'zining narxi bilan solishtirish faqat valyuta
 /// mos kelganda qilinadi — aks holda "arzon/qimmat" degan xulosa yanglish.
+/// Marketplace so'rovlariga umumiy tezlik cheklovi.
+///
+/// Nega bazada: ilova serverless muhitda ishlaydi va har so'rov yangi
+/// jarayonda bajariladi — xotiradagi hisoblagich har safar tozalanadi,
+/// ya'ni cheklov u yerda umuman ishlamaydi. Natijada marketplace limitiga
+/// urilib, so'rovlar behuda ketardi (WB rasm biriktirishda aynan shu bo'ldi:
+/// endpoint daqiqasiga bitta so'rov beradi, biz esa uchtasini yuborardik).
+model RateLimit {
+  /// Navbat kaliti: "wb:<token>|cards" kabi
+  key           String   @id
+  /// Shu vaqtgacha yangi so'rov yuborilmaydi
+  nextAllowedAt DateTime
+  updatedAt     DateTime @updatedAt
+
+  @@index([nextAllowedAt])
+}
+
 model CompetitorWatch {
   id             String       @id @default(cuid())
   organizationId String
