@@ -1235,7 +1235,11 @@ export async function finalizePending(req: Request, res: Response, next: NextFun
         updatedAt: { lt: new Date(Date.now() - 90_000) },
         product: { organizationId },
       },
-      orderBy: { updatedAt: 'asc' },
+      // Yangisidan boshlaymiz: eskilari orasida WB dan o'chirilgani bo'lishi
+      // mumkin va ular hech qachon yakunlanmaydi. Eski tartibda (asc) o'sha
+      // "o'lik" yozuvlar uchta o'rinni ham egallab, yangi kartochka
+      // navbatga umuman yetib bormasdi.
+      orderBy: { updatedAt: 'desc' },
       take: 3,
       include: { product: { include: { images: { orderBy: { order: 'asc' } } } } },
     });
@@ -1255,15 +1259,28 @@ export async function finalizePending(req: Request, res: Response, next: NextFun
 
       try {
         const result = await checkPublishStatus(spec, creds, listing.externalId!, imageUrls);
-        if (!result.pending) {
-          finished++;
-          await prisma.listing.update({
-            where: { id: listing.id },
-            data: result.success
-              ? { status: 'PUBLISHED', lastSyncedAt: new Date(), errorMessage: null }
-              : { status: 'ERROR', errorMessage: result.message },
-          });
-        }
+
+        // Yarim soatdan beri topilmayapti — kartochka WB da yo'q (o'chirilgan
+        // yoki umuman yaratilmagan). Bunday yozuv abadiy kutilib, har safar
+        // navbatdan joy egallab turardi.
+        const stale = Date.now() - listing.updatedAt.getTime() > 30 * 60 * 1000;
+        if (result.pending && !stale) continue;
+
+        finished++;
+        await prisma.listing.update({
+          where: { id: listing.id },
+          data:
+            result.pending && stale
+              ? {
+                  status: 'ERROR',
+                  errorMessage:
+                    `WB'da "${listing.externalId}" artikuli topilmadi. Kartochka yaratilmagan ` +
+                    "yoki keyin o'chirilgan — qaytadan yuboring.",
+                }
+              : result.success
+                ? { status: 'PUBLISHED', lastSyncedAt: new Date(), errorMessage: null }
+                : { status: 'ERROR', errorMessage: result.message },
+        });
       } catch {
         // Limit yoki tarmoq — keyingi chaqiruvda qayta urinamiz
       }
