@@ -51,6 +51,33 @@ const ALIASES: Record<string, string[]> = {
   vetnam: ['Вьетнам'],
   bangladesh: ['Бангладеш'],
   polsha: ['Польша'],
+
+  // Rang (colors)
+  // Uzum shablonining "Цвет" ustuni ham, WB "Цвет" xarakteristikasi ham
+  // ruscha yoziladi. "Bej" deb yuborsak WB uni ro'yxatidan topolmaydi,
+  // Uzum kartochkasida esa xaridorga o'zbekcha so'z ko'rinadi.
+  oq: ['белый'],
+  qora: ['черный'],
+  kulrang: ['серый'],
+  qizil: ['красный'],
+  "ko'k": ['синий'],
+  havorang: ['голубой'],
+  moviy: ['голубой'],
+  yashil: ['зеленый'],
+  sariq: ['желтый'],
+  "to'q sariq": ['оранжевый'],
+  jigarrang: ['коричневый'],
+  bej: ['бежевый'],
+  pushti: ['розовый'],
+  binafsha: ['фиолетовый'],
+  siyohrang: ['фиолетовый'],
+  bordo: ['бордовый'],
+  xaki: ['хаки'],
+  kumush: ['серебряный'],
+  oltin: ['золотой'],
+  'krem rang': ['кремовый'],
+  shaffof: ['прозрачный'],
+  'ko\'p rangli': ['разноцветный'],
 };
 
 /**

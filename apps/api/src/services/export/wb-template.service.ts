@@ -94,7 +94,7 @@ const WB_COLUMNS: ColumnMap[] = [
   // Bo'sh bo'lsa WB o'z qoidasini qo'llaydi.
   { header: 'KIZ', key: '__const__:', type: 'text' },
   { header: 'Packaging weight (kg)', key: 'weight', type: 'number', transform: gramsToKg },
-  { header: 'Color', key: 'color', type: 'text' },
+  { header: 'Color', key: 'color', type: 'text', transform: toWbDict },
   // Zaxira kalitlar vergul bilan — birinchi to'ldirilgani olinadi
   { header: 'Composition', key: 'composition,material', type: 'text' },
   { header: 'Gender', key: 'gender', type: 'text', transform: toWbDict },

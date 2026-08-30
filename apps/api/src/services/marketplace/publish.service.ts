@@ -393,6 +393,7 @@ const WB_DICTIONARY_FIELDS: Record<string, WbDirectory> = {
   gender: 'kinds',
   season: 'seasons',
   country: 'countries',
+  color: 'colors',
 };
 
 /**

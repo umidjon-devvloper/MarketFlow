@@ -110,7 +110,8 @@ export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
   { col: 'T', header: 'Ссылки на фото', key: '__images__', type: 'text', required: true },
   { col: 'U', header: 'Штрихкод', key: 'barcode', type: 'text' },
   { col: 'V', header: 'ИКПУ', key: 'mxik', type: 'text', required: true },
-  { col: 'W', header: 'Цвет', key: 'color', type: 'text' },
+  // Rang ham ruscha ustun: "Bej" emas, "бежевый"
+  { col: 'W', header: 'Цвет', key: 'color', type: 'text', transform: (raw: any) => staticWbValue(raw) || raw },
   { col: 'X', header: 'Размер', key: 'size', type: 'text' },
   { col: 'Y', header: 'Цена продажи (som)', key: 'price', type: 'number', required: true },
   { col: 'Z', header: 'Цена до скидки (som)', key: 'oldPrice', type: 'number', required: true },
