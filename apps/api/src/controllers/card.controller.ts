@@ -366,15 +366,23 @@ export async function aiFill(req: Request, res: Response, next: NextFunction) {
       result.notes.push("AI kategoriyani aniqlay olmadi — katalogdan o'zingiz tanlang");
     }
 
-    if (cred && spec.id !== 'UZUM' && result.values.category && !resolvedCategoryId) {
+    // Uzum katalogi shablonning ichida — kalit shart emas
+    const canSearchCategories = spec.id === 'UZUM' ? true : Boolean(cred);
+
+    if (canSearchCategories && result.values.category && !resolvedCategoryId) {
       try {
         const options = await searchCategories(
           spec.id,
-          {
-            apiKey: decrypt(cred.apiKey),
-            apiSecret: cred.apiSecret ? decrypt(cred.apiSecret) : null,
-            shopId: cred.shopId,
-          },
+          spec.id === 'UZUM'
+            ? {
+                apiKey: '',
+                template: (await getTemplateBuffer(organizationId, 'UZUM')) ?? undefined,
+              }
+            : {
+                apiKey: decrypt(cred!.apiKey),
+                apiSecret: cred!.apiSecret ? decrypt(cred!.apiSecret) : null,
+                shopId: cred!.shopId,
+              },
           { query: result.values.category, limit: 30 },
         );
         const matched = await matchCategory(
@@ -1173,11 +1181,19 @@ export async function listCategories(req: Request, res: Response, next: NextFunc
     const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
     if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
 
+    // Uzum'da API yo'q, lekin katalog shablonning ichida turadi — kalit ham,
+    // tarmoq ham kerak emas.
     if (spec.id === 'UZUM') {
-      throw new HttpError(
-        400,
-        "Uzum'da kategoriya Excel shablonidagi ochiluvchi ro'yxatdan tanlanadi — bu yerda katalog yo'q",
+      const custom = await getTemplateBuffer(organizationId, 'UZUM');
+      const items = await searchCategories(
+        spec.id,
+        { apiKey: '', template: custom ?? undefined },
+        {
+          query: typeof req.query.q === 'string' ? req.query.q : '',
+          limit: Math.min(Math.max(Number(req.query.limit) || 30, 1), 100),
+        },
       );
+      return res.json({ marketplace: spec.id, items });
     }
 
     const cred = await prisma.userMarketplace.findFirst({

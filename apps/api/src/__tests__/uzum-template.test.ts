@@ -4,6 +4,7 @@ import { unzipSync } from 'fflate';
 import {
   fillUzumTemplate,
   toUzumRow,
+  uzumCategories,
   uzumMaxRows,
   UZUM_TEMPLATE_COLUMNS,
 } from '../services/export/uzum-template.service';
@@ -56,13 +57,60 @@ describe('Uzum shabloni', () => {
     expect(cell(rows, 'B', 4)).toBe('K-1');
   });
 
-  it('E va F ustunlariga yozmaydi — ularni makros to\'ldiradi', () => {
+  it('E va F ustunlarini shablon katalogidan to\'ldiradi', () => {
+    // Katalog Лист2 varag'ida — ilgari bu ikki ustun bo'sh chiqar va
+    // sotuvchi faylni Excel'da ochib makros orqali tanlashi kerak edi.
+    const category = uzumCategories()[0];
     const { buffer } = fillUzumTemplate([
-      toUzumRow({ ...baseValues, category: 'Kiyim' }, ['https://a.jpg']),
+      toUzumRow({ ...baseValues, category: category.title }, ['https://a.jpg']),
+    ]);
+    const rows = readSheet(buffer);
+    expect(cell(rows, 'E', 4)).toBe(category.title);
+    expect(String(cell(rows, 'F', 4))).toBe(category.id);
+  });
+
+  it("katalogda yo'q kategoriyada E/F bo'sh qoladi va ogohlantiradi", () => {
+    const { buffer, warnings } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, category: 'Bunday kategoriya yo\'q' }, ['https://a.jpg']),
     ]);
     const rows = readSheet(buffer);
     expect(cell(rows, 'E', 4)).toBe('');
-    expect(cell(rows, 'F', 4)).toBe('');
+    expect(warnings.some((w) => w.column.includes('Категория'))).toBe(true);
+  });
+
+  it('ro\'yxatli ustunlarni Uzum yozuviga o\'giradi', () => {
+    // Uzum aynan o'z ma'lumotnomasidagi yozuvni kutadi: "бежевый" emas —
+    // "Бежевый", "No name" emas — "No Name".
+    const { buffer } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, brand: 'no name', color: 'Bej' }, ['https://a.jpg']),
+    ]);
+    const rows = readSheet(buffer);
+    expect(cell(rows, 'G', 4)).toBe('No Name');
+    expect(cell(rows, 'W', 4)).toBe('Бежевый');
+    expect(cell(rows, 'I', 4)).toBe('Узбекистан');
+  });
+
+  it("ro'yxatda yo'q qiymat yozilmaydi", () => {
+    const { buffer, warnings } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, color: 'kosmik-yashil' }, ['https://a.jpg']),
+    ]);
+    expect(cell(readSheet(buffer), 'W', 4)).toBe('');
+    expect(warnings.some((w) => /kosmik-yashil/.test(w.message))).toBe(true);
+  });
+
+  it("har bir o'lcham alohida qator bo'ladi, SKU guruhi bir xil qoladi", () => {
+    // Uzum shablonida bitta qator = bitta variant. "M,L,XL" bitta katakda
+    // qolsa, o'lcham ro'yxatdan topilmaydi va variantlar yo'qoladi.
+    const { buffer } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, sku: 'POLO', skuGroup: 'POLO', size: 'M,L,XL' }, ['https://a.jpg']),
+    ]);
+    const rows = readSheet(buffer);
+    expect(cell(rows, 'X', 4)).toBe('Размер одежды:M');
+    expect(cell(rows, 'X', 5)).toBe('Размер одежды:L');
+    expect(cell(rows, 'X', 6)).toBe('Размер одежды:XL');
+    expect(cell(rows, 'B', 4)).toBe('POLO-M');
+    expect(cell(rows, 'D', 4)).toBe('POLO');
+    expect(cell(rows, 'D', 6)).toBe('POLO');
   });
 
   it('makros, validatsiya va boshqa varaqlar saqlanadi', () => {
@@ -172,8 +220,11 @@ describe('Uzum shabloni', () => {
     expect(Number(cell(readSheet(buffer), 'Y', 4))).toBe(1000);
   });
 
-  it('kategoriyani faylda tanlash haqida ogohlantirish bo\'ladi', () => {
-    const { warnings } = fillUzumTemplate([toUzumRow(baseValues, ['https://a.jpg'])]);
-    expect(warnings.some((w) => /kategoriya/i.test(w.message) && w.column.includes('Категория'))).toBe(true);
+  it('kategoriya topilganda ortiqcha ogohlantirish bermaydi', () => {
+    const category = uzumCategories()[0];
+    const { warnings } = fillUzumTemplate([
+      toUzumRow({ ...baseValues, category: category.title }, ['https://a.jpg']),
+    ]);
+    expect(warnings.some((w) => w.column.includes('Категория'))).toBe(false);
   });
 });

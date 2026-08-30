@@ -216,7 +216,7 @@ export const openapiSpec = {
         description:
           "Ozon, WB va Yandex kartochka yaratishda raqamli kategoriya ID talab qiladi. " +
           "Ro'yxat marketplace katalogidan olinadi, ya'ni ulanish faol bo'lishi shart. " +
-          "Uzum'da kategoriyani Excel shablonidagi makros to'ldiradi — bu yerda katalog yo'q.",
+          "Uzum katalogi uning Excel shabloni ichidan (Лист2) o'qiladi — API kaliti kerak emas.",
         security: bearerAuth,
         parameters: [
           {

@@ -20,6 +20,12 @@ import * as wb from './wb-api.service';
 import * as yandex from './yandex-api.service';
 import { tokenId } from './rate-limit';
 import { MarketplaceId } from './specs';
+import { uzumCategories } from '../export/uzum-template.service';
+
+/** Uzum katalogi — shablon ichidagi Лист2 dan */
+function uzumCategoryOptions(template?: Buffer): CategoryOption[] {
+  return uzumCategories(template).map((c) => ({ id: c.id, name: c.title, path: c.path }));
+}
 
 export interface CategoryOption {
   /** Marketplace'ga yuboriladigan asosiy ID */
@@ -46,6 +52,8 @@ export interface CategoryCreds {
   apiKey: string;
   apiSecret?: string | null;
   shopId?: string | null;
+  /** Uzum: katalog sotuvchining o'z shabloni ichidan o'qiladi */
+  template?: Buffer;
 }
 
 // ─── KESH ────────────────────────────────────────────────
@@ -384,8 +392,8 @@ function rank(options: CategoryOption[], query: string, limit: number): Category
 /**
  * Marketplace kategoriyalarini qidirish.
  *
- * Uzum bu ro'yxatda yo'q: uning Excel shablonida kategoriyani makros
- * o'zi to'ldiradi (E/F ustunlari), qo'lda yozish yuklashni buzadi.
+ * Uzum'da API yo'q, lekin katalog uning Excel shablonining ichida (Лист2)
+ * turadi — shuning uchun u ham shu yerdan qidiriladi.
  */
 export async function searchCategories(
   marketplace: MarketplaceId,
@@ -406,10 +414,13 @@ export async function searchCategories(
       return wbSearch(creds, query, limit);
 
     case 'UZUM':
+      // Uzum'da API yo'q, lekin katalog shablonning ICHIDA (Лист2) turadi —
+      // 8500 dan ortiq kategoriya ID si bilan birga. Shu sababli kategoriya
+      // WB va Ozon'dagidek tanlanadi, sotuvchi Excel makrosiga tegmaydi.
+      return rank(uzumCategoryOptions(creds.template), query, limit);
+
     default:
-      throw new CategoryError(
-        "Uzum'da kategoriya Excel shablonidagi makros orqali tanlanadi — bu yerda ro'yxat yo'q",
-      );
+      throw new CategoryError('Bunday marketplace yo\'q');
   }
 }
 

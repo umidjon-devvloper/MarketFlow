@@ -43,15 +43,14 @@ describe('marketplace spetsifikatsiyalari', () => {
     }
   });
 
-  it('Ozon, WB va Yandex kategoriyani katalogdan tanlaydi', () => {
-    for (const id of ['OZON', 'WB', 'YANDEX'] as const) {
+  it('hamma marketplace kategoriyani katalogdan tanlaydi', () => {
+    // Uzum ham shu ro'yxatda: uning katalogi API'da emas, Excel shabloni
+    // ichida (Лист2) turadi, lekin tanlash mexanizmi bir xil.
+    for (const id of MARKETPLACE_IDS) {
       const fields = allFields(MARKETPLACE_SPECS[id]);
       expect(fields.find((f) => f.key === 'category')?.type, id).toBe('category');
       expect(fields.some((f) => f.key === 'categoryId'), `${id} da categoryId yo'q`).toBe(true);
     }
-    // Uzum'da kategoriyani shablon makrosi to'ldiradi — tanlagich kerak emas
-    const uzum = allFields(MARKETPLACE_SPECS.UZUM);
-    expect(uzum.some((f) => f.key === 'categoryId')).toBe(false);
   });
 
   it('publishRequired maydon oddiy saqlashni bloklamaydi, publishda so\'raladi', () => {

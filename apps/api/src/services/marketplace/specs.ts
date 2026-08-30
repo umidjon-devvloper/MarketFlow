@@ -206,12 +206,24 @@ const UZUM: MarketplaceSpec = {
           key: 'category',
           label: 'Kategoriya',
           excelHeader: 'Kategoriya',
-          type: 'text',
+          // Katalog Uzum shablonining ichida (Лист2) — 8500 dan ortiq
+          // kategoriya ID si bilan. Shuning uchun tanlagich WB va Ozon'dagidek
+          // ishlaydi va Excel'dagi makrosga tegishga hojat qolmaydi.
+          type: 'category',
+          lang: 'ru',
           required: true,
           mapsTo: 'category',
           aiFillable: true,
-          placeholder: 'Kiyim-kechak / Erkaklar ko\'ylagi',
-          hint: 'Uzum katalogidagi to\'liq yo\'l bo\'lsa yaxshi',
+          hint: "Uzum katalogidan tanlanadi — u Excel'ning E va F ustunlarini to'ldiradi",
+        },
+        {
+          key: 'categoryId',
+          label: 'id kategorii',
+          excelHeader: '',
+          type: 'text',
+          required: false,
+          publishRequired: true,
+          hidden: true,
         },
         {
           key: 'title',

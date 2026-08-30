@@ -13,9 +13,10 @@
  * Qolgan hamma narsa — makros, validatsiya, uslublar, boshqa varaqlar —
  * bayt-bayt o'z holicha qoladi.
  *
- * E va F ustunlari (kategoriya nomi va id) ATAYIN bo'sh qoldiriladi:
- * ularni makros C1/D1 dagi tanlovga qarab o'zi to'ldiradi, qo'lda yozish
- * yuklashda xatolikka olib keladi.
+ * E va F ustunlarini (kategoriya nomi va id) esa o'zimiz to'ldiramiz —
+ * shablonning ichida, Лист2 varag'ida, Uzum'ning butun katalogi ID lari
+ * bilan turadi. Ilgari bu ikki ustun bo'sh chiqar va sotuvchi faylni
+ * Excel'da ochib makros orqali tanlashi kerak edi.
  */
 
 import fs from 'fs';
@@ -76,6 +77,8 @@ interface TemplateColumn {
   required?: boolean;
   /** Qiymatni shablonga yozishdan oldin o'girish */
   transform?: (raw: any) => any;
+  /** Shablon ichidagi ma'lumotnoma — qiymat aynan shu ro'yxatdan bo'lishi shart */
+  ref?: keyof UzumReferences;
 }
 
 export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
@@ -86,7 +89,7 @@ export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
   // E, F — makros to'ldiradi, tegmaymiz
   { col: 'E', header: 'Название категории', key: null, type: 'text' },
   { col: 'F', header: 'id категории', key: null, type: 'text' },
-  { col: 'G', header: 'Бренд', key: 'brand', type: 'text', required: true },
+  { col: 'G', header: 'Бренд', key: 'brand', type: 'text', required: true, ref: 'brands' },
   { col: 'H', header: 'Модель', key: 'model', type: 'text' },
   // Shablon ruscha to'ldiriladi: "Xitoy" emas, "Китай"
   {
@@ -96,6 +99,7 @@ export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
     type: 'text',
     required: true,
     transform: (raw: any) => staticWbValue(raw) || raw,
+    ref: 'countries',
   },
   { col: 'J', header: 'Описание товара RU', key: 'descriptionRu', type: 'text', maxLength: 5000, required: true },
   { col: 'K', header: 'Описание товара UZ', key: 'descriptionUz', type: 'text', maxLength: 5000, required: true },
@@ -111,8 +115,8 @@ export const UZUM_TEMPLATE_COLUMNS: TemplateColumn[] = [
   { col: 'U', header: 'Штрихкод', key: 'barcode', type: 'text' },
   { col: 'V', header: 'ИКПУ', key: 'mxik', type: 'text', required: true },
   // Rang ham ruscha ustun: "Bej" emas, "бежевый"
-  { col: 'W', header: 'Цвет', key: 'color', type: 'text', transform: (raw: any) => staticWbValue(raw) || raw },
-  { col: 'X', header: 'Размер', key: 'size', type: 'text' },
+  { col: 'W', header: 'Цвет', key: 'color', type: 'text', transform: (raw: any) => staticWbValue(raw) || raw, ref: 'colors' },
+  { col: 'X', header: 'Размер', key: 'size', type: 'text', ref: 'sizes' },
   { col: 'Y', header: 'Цена продажи (som)', key: 'price', type: 'number', required: true },
   { col: 'Z', header: 'Цена до скидки (som)', key: 'oldPrice', type: 'number', required: true },
   { col: 'AA', header: 'Вес (г)', key: 'weight', type: 'number', required: true },
@@ -263,9 +267,79 @@ function templatePath(): string {
 }
 
 /**
+ * Bir nechta o'lcham — bir nechta qator.
+ *
+ * Uzum shablonida bitta qator = bitta variant. "M,L,XL" deb bitta katakka
+ * yozsak, Uzum uni ro'yxatidan topolmaydi va o'lchamsiz bitta tovar
+ * yaratiladi. Variantlar bitta kartochkaga birlashishi uchun ularning
+ * "Группировка SKU" si bir xil qoladi, artikuli esa farqlanadi.
+ */
+function expandUzumSizes(rows: UzumExportRow[]): UzumExportRow[] {
+  const out: UzumExportRow[] = [];
+  for (const row of rows) {
+    const sizes = String(row.values.size ?? '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (sizes.length < 2) {
+      out.push(row);
+      continue;
+    }
+
+    const sku = String(row.values.sku ?? '').trim();
+    for (const size of sizes) {
+      out.push({
+        imageUrls: row.imageUrls,
+        values: {
+          ...row.values,
+          size,
+          // Artikul har bir variantda alohida bo'lishi shart
+          sku: sku ? `${sku}-${size}` : sku,
+        },
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Kartochkadagi kategoriyani shablon katalogiga bog'lash.
+ *
+ * Avval ID bo'yicha (AI kategoriyani tanlaganda ID ham saqlanadi), keyin
+ * nomi va yo'lining oxirgi bo'g'ini bo'yicha. Topilmasa `null` — E/F bo'sh
+ * qoladi va sotuvchi ogohlantiriladi.
+ */
+function resolveUzumCategory(
+  values: Record<string, any>,
+  categories: UzumCategoryRef[],
+): UzumCategoryRef | null {
+  if (!categories.length) return null;
+
+  const id = String(values.categoryId ?? '').trim();
+  if (id) {
+    const byId = categories.find((c) => c.id === id);
+    if (byId) return byId;
+  }
+
+  const raw = String(values.category ?? '').trim();
+  if (!raw) return null;
+
+  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  const leaf = norm(raw.split(/[>/]/).pop() ?? raw);
+
+  return (
+    categories.find((c) => norm(c.title) === leaf) ??
+    categories.find((c) => norm(c.path) === norm(raw)) ??
+    null
+  );
+}
+
+/**
  * Uzum shablonini ma'lumot bilan to'ldirib, .xlsm buferini qaytaradi.
  */
-export function fillUzumTemplate(rows: UzumExportRow[], template?: Buffer): UzumExportResult {
+export function fillUzumTemplate(inputRows: UzumExportRow[], template?: Buffer): UzumExportResult {
+  const rows = expandUzumSizes(inputRows);
   const maxRows = uzumMaxRows(template);
   if (rows.length > maxRows) {
     throw new Error(
@@ -274,25 +348,18 @@ export function fillUzumTemplate(rows: UzumExportRow[], template?: Buffer): Uzum
     );
   }
 
-  const zip = unzipSync(new Uint8Array(fs.readFileSync(templatePath())));
+  const zip = unzipSync(new Uint8Array(template ?? fs.readFileSync(templatePath())));
   const sheetBytes = zip[SHEET_PATH];
   if (!sheetBytes) throw new Error('Shablon buzilgan: Лист1 topilmadi');
 
   let xml = Buffer.from(sheetBytes).toString('utf8');
   const warnings: UzumExportWarning[] = [];
 
-  // Uzum kategoriyani faqat shablon ichidagi ochiluvchi ro'yxatdan (makros)
-  // qabul qiladi — bizda Uzum'ning raqamli kategoriya ID si yo'q, shuning
-  // uchun E/F ustunlarini kod to'ldira olmaydi. Sotuvchini bir marta
-  // aniq ogohlantiramiz: aks holda "Название/ID категории не указано" chiqadi.
-  warnings.push({
-    row: DATA_START_ROW,
-    column: 'Категория (E/F)',
-    message:
-      "Yuklashdan oldin faylni ochib, har bir tovar uchun kategoriyani " +
-      "ochiluvchi ro'yxatdan tanlang — makros E/F ustunlarini to'ldiradi. " +
-      "Aks holda Uzum 'kategoriya ko'rsatilmagan' deb rad etadi.",
-  });
+  // Kategoriya (E/F) va ro'yxatli ustunlar shablonning O'Z ichidagi
+  // ma'lumotnomadan to'ldiriladi. Ilgari E/F bo'sh chiqar va sotuvchi
+  // faylni Excel'da ochib makros orqali tanlashi kerak edi.
+  const refs = uzumReferences(template);
+  const categories = uzumCategories(template);
 
   rows.forEach((row, index) => {
     const rowNum = DATA_START_ROW + index;
@@ -315,11 +382,29 @@ export function fillUzumTemplate(rows: UzumExportRow[], template?: Buffer): Uzum
     const styles = readStyles(match[2] || '');
     const cells: string[] = [];
 
+    // Kategoriya — E (nomi) va F (id). Ikkalasi ham majburiy va ikkalasi
+    // ham shablon ichidagi katalogdan keladi.
+    const category = resolveUzumCategory(row.values, categories);
+    if (!category) {
+      warnings.push({
+        row: rowNum,
+        column: 'Категория (E/F)',
+        message:
+          "kategoriya aniqlanmadi — faylni ochib ochiluvchi ro'yxatdan tanlang, " +
+          "aks holda Uzum 'kategoriya ko'rsatilmagan' deb rad etadi",
+      });
+    }
+
     for (const column of UZUM_TEMPLATE_COLUMNS) {
       if (column.key === null) {
-        // E/F — makros to'ldiradi. Uslubni saqlab, bo'sh qoldiramiz
-        const s = styles.get(column.col);
-        if (s) cells.push(`<c r="${column.col}${rowNum}" s="${s}"/>`);
+        // E/F — katalogdan to'ldiriladi, topilmasa uslubni saqlab bo'sh qoladi
+        const text = column.col === 'E' ? category?.title : category?.id;
+        if (text) {
+          cells.push(buildCell(column.col, rowNum, text, 'text', styles.get(column.col)));
+        } else {
+          const s = styles.get(column.col);
+          if (s) cells.push(`<c r="${column.col}${rowNum}" s="${s}"/>`);
+        }
         continue;
       }
 
@@ -330,6 +415,25 @@ export function fillUzumTemplate(rows: UzumExportRow[], template?: Buffer): Uzum
 
       if (column.transform && value !== undefined && value !== null && String(value).trim() !== '') {
         value = column.transform(value);
+      }
+
+      // Ro'yxatli ustun: Uzum aynan o'z yozuvini kutadi. "бежевый" emas —
+      // "Бежевый", "No name" emas — "No Name". Mos kelmasa bo'sh qoldiramiz:
+      // ro'yxatdan tashqari qiymat butun faylni rad ettiradi.
+      if (column.ref && value !== undefined && value !== null && String(value).trim() !== '') {
+        const matched = matchReference(String(value), refs[column.ref]);
+        if (matched.value) {
+          value = matched.value;
+        } else {
+          warnings.push({
+            row: rowNum,
+            column: column.header,
+            message: matched.ambiguous
+              ? `"${value}" bir nechta ro'yxatga to'g'ri keldi — Excel'da ochiluvchi ro'yxatdan tanlang`
+              : `"${value}" Uzum ro'yxatida yo'q — bo'sh qoldirildi`,
+          });
+          value = undefined;
+        }
       }
 
       if (column.maxLength && typeof value === 'string' && value.length > column.maxLength) {
@@ -406,6 +510,145 @@ export function fillUzumTemplate(rows: UzumExportRow[], template?: Buffer): Uzum
   // mimeType saqlanishi uchun siqishni asl darajada qoldiramiz
   const out = zipSync(zip, { level: 6 });
   return { buffer: Buffer.from(out), warnings };
+}
+
+// ─── SHABLON ICHIDAGI MA'LUMOTNOMALAR ────────────────────
+
+/**
+ * Uzum shablonining ichida ikkita ma'lumotnoma varag'i bor va ular
+ * yuklashda hal qiluvchi:
+ *
+ *   Лист2 — kategoriyalar katalogi (category_id, category_title, full_path_ru)
+ *   Лист3 — o'lchamlar, ranglar, brendlar va davlatlar ro'yxati
+ *
+ * Buni bilmaganimiz uchun eksport ikki joyda yiqilardi. Birinchisi —
+ * kategoriya: E/F ustunlarini sotuvchi Excel ichidagi makros orqali
+ * qo'lda tanlashi kerak edi. Ikkinchisi — ro'yxatli ustunlar: biz
+ * "бежевый" va "No name" deb yozardik, Uzum esa aynan o'z yozuvini
+ * kutadi ("Бежевый", "No Name") va boshqasini rad etadi.
+ *
+ * Ma'lumotnoma faylning ichida bo'lgani uchun na API, na tarmoq kerak —
+ * sotuvchi o'z kategoriyasining shablonini yuklasa, ro'yxat ham u bilan
+ * birga yangilanadi.
+ */
+export interface UzumCategoryRef {
+  /** Uzum katalog ID si — F ustuniga shu yoziladi */
+  id: string;
+  /** Kategoriya nomi — E ustuniga shu yoziladi */
+  title: string;
+  /** To'liq yo'l (ruscha) — qidiruvda va tanlovda ko'rsatiladi */
+  path: string;
+}
+
+export interface UzumReferences {
+  sizes: string[];
+  colors: string[];
+  brands: string[];
+  countries: string[];
+}
+
+/** Лист2 — kategoriyalar, Лист3 — ro'yxatlar */
+const CATEGORY_SHEET = 'xl/worksheets/sheet2.xml';
+const LIST_SHEET = 'xl/worksheets/sheet3.xml';
+
+let cachedRefs: UzumReferences | null = null;
+let cachedCategories: UzumCategoryRef[] | null = null;
+
+function sharedStrings(zip: Record<string, Uint8Array>): string[] {
+  const xml = zip['xl/sharedStrings.xml'] ? Buffer.from(zip['xl/sharedStrings.xml']).toString('utf8') : '';
+  return [...xml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) =>
+    (m[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, '')).join(''),
+  );
+}
+
+/** Varaqning bitta ustunidagi qiymatlar (1-qator sarlavha, tashlab ketiladi) */
+function columnValues(sheet: string, col: string, shared: string[]): string[] {
+  const out: string[] = [];
+  const re = new RegExp(`<c r="${col}(\\d+)"([^>]*)>(?:<v>([^<]*)</v>)?</c>`, 'g');
+  for (const m of sheet.matchAll(re)) {
+    if (Number(m[1]) < 2) continue;
+    const value = / t="s"/.test(m[2]) ? shared[Number(m[3])] : m[3];
+    if (value) out.push(String(value));
+  }
+  return out;
+}
+
+export function uzumReferences(template?: Buffer): UzumReferences {
+  if (!template && cachedRefs) return cachedRefs;
+
+  const zip = unzipSync(new Uint8Array(template ?? fs.readFileSync(templatePath())));
+  const shared = sharedStrings(zip);
+  const sheet = zip[LIST_SHEET] ? Buffer.from(zip[LIST_SHEET]).toString('utf8') : '';
+
+  const refs: UzumReferences = {
+    sizes: columnValues(sheet, 'A', shared),
+    colors: columnValues(sheet, 'B', shared),
+    brands: columnValues(sheet, 'C', shared),
+    countries: columnValues(sheet, 'D', shared),
+  };
+
+  if (!template) cachedRefs = refs;
+  return refs;
+}
+
+/** Shablon ichidagi kategoriyalar katalogi (takrorlanmaydigan) */
+export function uzumCategories(template?: Buffer): UzumCategoryRef[] {
+  if (!template && cachedCategories) return cachedCategories;
+
+  const zip = unzipSync(new Uint8Array(template ?? fs.readFileSync(templatePath())));
+  const shared = sharedStrings(zip);
+  const sheet = zip[CATEGORY_SHEET] ? Buffer.from(zip[CATEGORY_SHEET]).toString('utf8') : '';
+
+  // Har bir kategoriya filtri uchun alohida qator bor — ID bo'yicha yig'amiz
+  const rows = new Map<number, Record<string, string>>();
+  for (const m of sheet.matchAll(/<c r="([A-C])(\d+)"([^>]*)>(?:<v>([^<]*)<\/v>)?<\/c>/g)) {
+    const rowNum = Number(m[2]);
+    if (rowNum < 2) continue;
+    const value = / t="s"/.test(m[3]) ? shared[Number(m[4])] : m[4];
+    if (!value) continue;
+    const row = rows.get(rowNum) ?? {};
+    row[m[1]] = String(value);
+    rows.set(rowNum, row);
+  }
+
+  const byId = new Map<string, UzumCategoryRef>();
+  for (const row of rows.values()) {
+    if (!row.A || !row.B) continue;
+    if (byId.has(row.A)) continue;
+    byId.set(row.A, {
+      id: row.A,
+      title: row.B,
+      path: (row.C ?? row.B).replace(/&gt;/g, '>').replace(/&amp;/g, '&'),
+    });
+  }
+
+  const out = [...byId.values()];
+  if (!template) cachedCategories = out;
+  return out;
+}
+
+/**
+ * Qiymatni ma'lumotnomadagi aynan yozuvga o'girish.
+ *
+ * O'lchamlar ro'yxati prefiksli: "Размер одежды:M". Sotuvchi esa "M" deb
+ * yozadi — shuning uchun ikki nuqtadan keyingi qism bo'yicha ham qidiramiz.
+ * Bir nechta ro'yxatga to'g'ri kelsa ("42" — ham oyoq kiyim, ham ko'ylak
+ * yoqasi) tanlab qo'ymaymiz: noto'g'ri o'lcham bilan sotuvga chiqqan tovar
+ * qaytarib olinadi, bo'sh katak esa faqat ogohlantirish beradi.
+ */
+export function matchReference(value: string, list: string[]): { value: string | null; ambiguous: boolean } {
+  const norm = (t: string) => t.toLowerCase().replace(/\s+/g, ' ').trim();
+  const target = norm(value);
+  if (!target) return { value: null, ambiguous: false };
+
+  const exact = list.find((item) => norm(item) === target);
+  if (exact) return { value: exact, ambiguous: false };
+
+  const bySuffix = list.filter((item) => item.includes(':') && norm(item.split(':').slice(1).join(':')) === target);
+  if (bySuffix.length === 1) return { value: bySuffix[0], ambiguous: false };
+  if (bySuffix.length > 1) return { value: null, ambiguous: true };
+
+  return { value: null, ambiguous: false };
 }
 
 /** Yuklab olinadigan fayl nomi */

@@ -40,7 +40,8 @@ describe('marketplace Excel eksporti', () => {
   it("ustun nomlari spec dagi excelHeader bilan bir xil", () => {
     const wb = XLSX.read(buildMarketplaceWorkbook(uzum, [row]), { type: 'buffer' });
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets['Uzum']);
-    const expected = allFields(uzum).map((f) => f.excelHeader);
+    // Yashirin maydonlar (categoryId) ustun bo'lmaydi — ularni tanlagich to'ldiradi
+    const expected = allFields(uzum).filter((f) => !f.hidden).map((f) => f.excelHeader);
     for (const header of expected) {
       expect(Object.keys(rows[0]), `"${header}" ustuni yo'q`).toContain(header);
     }
