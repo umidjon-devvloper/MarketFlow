@@ -22,7 +22,7 @@ import * as ozon from './ozon-api.service';
 import * as wb from './wb-api.service';
 import * as yandex from './yandex-api.service';
 import { charcKey, isCoveredCharc, getWbTnved } from './categories.service';
-import { toWbValue, WbDirectory } from './wb-dictionary.service';
+import { toWbValue, staticWbValue, WbDirectory } from './wb-dictionary.service';
 
 export interface PublishInput {
   values: Record<string, any>;
@@ -961,6 +961,57 @@ async function publishYandex(
     warnings.push('Yandex shtrix-kodni majburiy qiladi — barkodsiz tovar moderatsiyadan o\'tmasligi mumkin');
   }
 
+  const countryRu = v.country ? staticWbValue(str(v, 'country')) : '';
+  if (v.country && !countryRu) {
+    warnings.push(`"${str(v, 'country')}" — Yandex ro'yxatida yo'q, davlat yuborilmadi`);
+  }
+
+  /**
+   * Kategoriya parametrlari. ENUM turdagilarda matn emas, `valueId` kutiladi —
+   * matn yuborilsa Yandex qiymatni e'tiborsiz qoldiradi va tovar katalogda
+   * to'liq ko'rinmaydi.
+   */
+  const parameterValues: any[] = [];
+  const dynamicParams = v.yandexParameters;
+  if (dynamicParams && typeof dynamicParams === 'object') {
+    let catalog: any[] = [];
+    try {
+      const raw: any = await yandex.getCategoryParameters(creds.apiKey, marketCategoryId);
+      catalog = raw?.result?.parameters ?? [];
+    } catch (err: any) {
+      warnings.push(`Yandex parametrlari o'qilmadi (${err?.message}) — ular yuborilmadi`);
+    }
+
+    const byId = new Map<number, any>(catalog.map((p: any) => [Number(p.id), p]));
+    for (const [idStr, rawValue] of Object.entries(dynamicParams as Record<string, unknown>)) {
+      const id = Number(idStr);
+      const param = byId.get(id);
+      if (!param) continue;
+
+      const parts = (Array.isArray(rawValue) ? rawValue : String(rawValue ?? '').split(','))
+        .map((x) => String(x).trim())
+        .filter(Boolean);
+      if (!parts.length) continue;
+
+      const allowed: any[] = Array.isArray(param.values) ? param.values : [];
+      for (const part of parts) {
+        if (allowed.length) {
+          const hit = allowed.find(
+            (o: any) => String(o?.value ?? '').toLowerCase() === part.toLowerCase(),
+          );
+          if (hit) parameterValues.push({ parameterId: id, valueId: Number(hit.id) });
+          else warnings.push(`"${part}" — "${param.name}" ro'yxatida yo'q, yuborilmadi`);
+          continue;
+        }
+        parameterValues.push({
+          parameterId: id,
+          value: part,
+          ...(param?.unit?.defaultUnitId ? { unitId: Number(param.unit.defaultUnitId) } : {}),
+        });
+      }
+    }
+  }
+
   const body = {
     offerMappings: [
       {
@@ -973,7 +1024,10 @@ async function publishYandex(
           vendorCode: str(v, 'vendorCode') || undefined,
           barcodes: barcode ? [barcode] : undefined,
           pictures: input.imageUrls,
-          manufacturerCountries: v.country ? [str(v, 'country')] : undefined,
+          // Davlat nomi ruscha bo'lishi kerak: formadagi ro'yxat o'zbekcha
+          // ("Xitoy") va uni shundayligicha yuborsak Yandex tanimaydi
+          manufacturerCountries: countryRu ? [countryRu] : undefined,
+          ...(parameterValues.length ? { parameterValues } : {}),
           // Yandex santimetr va kilogramm kutadi
           weightDimensions: {
             length: toApiUnits(spec, v, 'packLength', 'sm'),

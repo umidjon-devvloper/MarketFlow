@@ -12,6 +12,11 @@ export interface CharcField {
   unit?: string;
   maxCount: number;
   popular: boolean;
+  /**
+   * Ruxsat etilgan qiymatlar (Yandex ENUM kabi). Bo'lsa ro'yxatdan tanlanadi:
+   * erkin matn yuborilsa marketplace qiymatni tanimaydi.
+   */
+  options?: string[];
 }
 
 /**
@@ -127,14 +132,29 @@ function CharcInput({
           <span className="text-muted font-normal ml-1">({field.unit})</span>
         )}
       </label>
-      <input
-        type={field.type === 'number' ? 'number' : 'text'}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={multi ? 'bir nechta — vergul bilan ajrating' : ''}
-        className={base}
-      />
-      {multi && (
+      {field.options?.length ? (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={base}>
+          <option value="">Tanlang... ({field.options.length} ta)</option>
+          {/* Saqlangan qiymat ro'yxatda bo'lmasa ham ko'rinib tursin */}
+          {value && !field.options.includes(value) && (
+            <option value={value}>{value} — ro&apos;yxatda yo&apos;q</option>
+          )}
+          {field.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          type={field.type === 'number' ? 'number' : 'text'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={multi ? 'bir nechta — vergul bilan ajrating' : ''}
+          className={base}
+        />
+      )}
+      {multi && !field.options?.length && (
         <p className="mt-1 text-xs text-muted">
           {field.maxCount} tagacha qiymat kiritish mumkin
         </p>

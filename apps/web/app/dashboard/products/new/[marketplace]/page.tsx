@@ -199,7 +199,7 @@ export default function NewCardPage() {
    */
   const subjectId = values.categoryId;
   const ozonTypeId = values.typeId;
-  const hasCategoryFields = spec?.id === 'WB' || spec?.id === 'OZON';
+  const hasCategoryFields = spec?.id !== 'UZUM';
   const { data: charcData, isFetching: charcsLoading } = useQuery({
     queryKey: ['card-charcs', marketplace, subjectId, ozonTypeId],
     queryFn: async () =>
@@ -214,7 +214,12 @@ export default function NewCardPage() {
   const charcFields: CharcField[] = charcData?.charcs || [];
 
   /** Qiymatlar qaysi kalitda saqlanadi — marketplace'ga qarab */
-  const charcValuesKey = spec?.id === 'OZON' ? 'ozonAttributes' : 'wbCharacteristics';
+  const charcValuesKey =
+    spec?.id === 'OZON'
+      ? 'ozonAttributes'
+      : spec?.id === 'YANDEX'
+        ? 'yandexParameters'
+        : 'wbCharacteristics';
 
   // Tayyor qiymatlar va rasmlarni bir marta joylashtiramiz
   useEffect(() => {
@@ -428,6 +433,8 @@ export default function NewCardPage() {
           unit: c.unit,
           maxCount: c.maxCount,
           popular: c.popular,
+          // Ro'yxatli maydonlarda AI faqat shu qiymatlardan tanlaydi
+          options: c.options?.slice(0, 60),
         })),
       });
 

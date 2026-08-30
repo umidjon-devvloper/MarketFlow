@@ -48,6 +48,7 @@ import {
   getWbCharacteristics,
   getWbTnved,
   getOzonAttributes,
+  getYandexParameters,
   CategoryError,
 } from '../services/marketplace/categories.service';
 import {
@@ -202,6 +203,8 @@ const charcInputSchema = z.object({
   unit: z.string().max(60).optional(),
   maxCount: z.number().int().min(0).max(200).default(1),
   popular: z.boolean().optional(),
+  /** Ruxsat etilgan qiymatlar — AI faqat shulardan tanlaydi */
+  options: z.array(z.string().max(200)).max(60).optional(),
 });
 
 const aiFillSchema = z.object({
@@ -1165,8 +1168,8 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
     const organizationId = req.organization!.id;
     const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
     if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
-    if (spec.id !== 'WB' && spec.id !== 'OZON') {
-      // Yandex kategoriya atributlarini boshqacha beradi — keyingi bosqichda
+    if (spec.id === 'UZUM') {
+      // Uzum Seller API'da kategoriya atributlari yo'q — Excel makrosi orqali
       return res.json({ marketplace: spec.id, charcs: [] });
     }
 
@@ -1198,6 +1201,11 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
         typeId,
       );
       return res.json({ marketplace: spec.id, subjectId, typeId, charcs });
+    }
+
+    if (spec.id === 'YANDEX') {
+      const charcs = await getYandexParameters(decrypt(cred.apiKey), subjectId);
+      return res.json({ marketplace: spec.id, subjectId, charcs });
     }
 
     const charcs = await getWbCharacteristics(decrypt(cred.apiKey), subjectId);

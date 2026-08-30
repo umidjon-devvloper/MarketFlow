@@ -62,6 +62,8 @@ export interface CharcSpec {
   /** Nechta qiymat kiritish mumkin (1 dan katta bo'lsa vergul bilan) */
   maxCount: number;
   popular?: boolean;
+  /** Ruxsat etilgan qiymatlar — bo'lsa AI faqat shulardan tanlaydi */
+  options?: string[];
 }
 
 export interface VisionFillResult {
@@ -153,6 +155,10 @@ function buildCharcSpecText(charcs: CharcSpec[]): string {
       if (c.type === 'number') parts.push('(faqat son)');
       if (c.unit) parts.push(`(o'lchov: ${c.unit})`);
       if (c.maxCount > 1) parts.push(`(${c.maxCount} tagacha qiymat, vergul bilan)`);
+      if (c.options?.length) {
+        // Ro'yxatdan tashqari qiymat marketplace tomonidan qabul qilinmaydi
+        parts.push(`(FAQAT shulardan: ${c.options.slice(0, 40).join(' | ')})`);
+      }
       if (c.required) parts.push('[majburiy]');
       return `- ${parts.join(' ')}`;
     })
@@ -360,6 +366,18 @@ function sanitizeCharcs(charcs: CharcSpec[], parsed: Record<string, any>) {
     if (Array.isArray(value)) value = value.join(', ');
     value = String(value).trim();
     if (!value || value.toLowerCase() === 'null' || value === '-') continue;
+
+    if (charc.options?.length) {
+      const match = charc.options.find(
+        (o) => o.toLowerCase() === value.toLowerCase() || o.toLowerCase().includes(value.toLowerCase()),
+      );
+      if (!match) {
+        notes.push(`"${charc.name}" uchun AI "${value}" dedi — ro'yxatda yo'q, o'zingiz tanlang`);
+        continue;
+      }
+      charcValues[String(charc.id)] = match;
+      continue;
+    }
 
     if (charc.type === 'number') {
       const num = toNumberOrNull(String(value));

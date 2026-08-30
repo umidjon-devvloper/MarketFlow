@@ -395,6 +395,12 @@ export interface CharcField {
   maxCount: number;
   /** WB " commonly used" deb belgilagan — formada oldinroq ko'rsatiladi */
   popular: boolean;
+  /**
+   * Ruxsat etilgan qiymatlar (Yandex ENUM kabi). Bo'lsa forma ro'yxat
+   * ko'rsatadi va AI ham faqat shulardan tanlaydi — erkin matn yuborilsa
+   * marketplace qiymatni tanimaydi.
+   */
+  options?: string[];
 }
 
 /**
@@ -544,6 +550,75 @@ export async function getOzonAttributes(
   return out;
 }
 
+/**
+ * Yandex kategoriya parametrlari — formadagi "Kategoriya xususiyatlari" uchun.
+ *
+ * Yandex buni "parameter" deb ataydi. ENUM turdagilar ro'yxatdan tanlanadi va
+ * joylashda matn emas, `valueId` yuboriladi — matn yuborilsa qiymat
+ * e'tiborsiz qoladi va tovar katalogda to'liq ko'rinmaydi.
+ */
+const YANDEX_COVERED_PARAMS = new Set([
+  'название',
+  'бренд',
+  'производитель',
+  'страна производства',
+  'страна-изготовитель',
+  'описание',
+  'цвет',
+  'размер',
+  'пол',
+  'сезон',
+  'состав',
+  'вес',
+  'штрихкод',
+]);
+
+const yandexParamCache = new Map<string, { items: CharcField[]; expiresAt: number }>();
+
+export async function getYandexParameters(
+  apiKey: string,
+  categoryId: number | string,
+): Promise<CharcField[]> {
+  const key = `${categoryId}:${tokenId(apiKey)}`;
+  const hit = yandexParamCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.items;
+
+  const raw: any = await yandex.getCategoryParameters(apiKey, categoryId);
+  const list: any[] = raw?.result?.parameters ?? [];
+
+  const out: CharcField[] = [];
+  for (const p of list) {
+    const name = String(p?.name ?? '').trim();
+    if (!name || YANDEX_COVERED_PARAMS.has(normalize(name))) continue;
+
+    const values = Array.isArray(p?.values)
+      ? p.values.map((v: any) => String(v?.value ?? '').trim()).filter(Boolean)
+      : [];
+
+    out.push({
+      id: Number(p.id),
+      name,
+      type: String(p?.type ?? '').toUpperCase() === 'NUMERIC' ? 'number' : 'string',
+      required: !!p?.required,
+      unit: p?.unit?.units?.find((u: any) => u.id === p?.unit?.defaultUnitId)?.name,
+      maxCount: p?.multivalue ? 5 : 1,
+      // Yandex "ADDITIONAL" deb belgilaganlari ikkinchi darajali
+      popular: !(p?.recommendationTypes ?? []).includes('ADDITIONAL'),
+      ...(values.length ? { options: values.slice(0, 200) } : {}),
+    });
+  }
+
+  out.sort(
+    (a, b) =>
+      Number(b.required) - Number(a.required) ||
+      Number(b.popular) - Number(a.popular) ||
+      a.name.localeCompare(b.name, 'ru'),
+  );
+
+  if (out.length) yandexParamCache.set(key, { items: out, expiresAt: Date.now() + TREE_TTL_MS });
+  return out;
+}
+
 /** TN VED ro'yxati predmet bo'yicha keshlanadi — u kunlab o'zgarmaydi */
 const tnvedCache = new Map<string, { items: Array<{ tnved: string; isKiz?: boolean }>; expiresAt: number }>();
 const TNVED_TTL_MS = 12 * 60 * 60 * 1000;
@@ -572,6 +647,7 @@ export function clearCategoryCache(): void {
   treeCache.clear();
   tnvedCache.clear();
   ozonAttrCache.clear();
+  yandexParamCache.clear();
   inFlight.clear();
 }
 
