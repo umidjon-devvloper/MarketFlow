@@ -909,12 +909,18 @@ export async function publishCard(req: Request, res: Response, next: NextFunctio
     // Natijani listing'ga yozamiz. `pending` — marketplace hali qayta ishlayapti,
     // shuning uchun PUBLISHED emas, PENDING qoladi va taskId saqlanadi:
     // holat tekshiruvi aynan shu identifikator bo'yicha ishlaydi.
+    //
+    // DIQQAT: externalId ni O'CHIRMAYMIZ. Avval bu yerda `result.taskId ?? null`
+    // turardi va muvaffaqiyatli joylashda (taskId qaytmaydigan yo'lda) u null
+    // bo'lib qolardi — kartochkaning WB dagi artikuli bilan bog'lanishi
+    // yo'qolar, keyingi har qanday holat tekshiruvi "hali yuborilmagan" deb
+    // xato berardi.
     await prisma.listing.updateMany({
       where: { productId: product.id, marketplace: spec.id as any },
       data: result.success
         ? {
             status: result.pending ? 'PENDING' : 'PUBLISHED',
-            externalId: result.taskId ?? null,
+            ...(result.taskId ? { externalId: result.taskId } : {}),
             lastSyncedAt: new Date(),
             errorMessage: result.warnings?.length ? result.warnings.join(' · ') : null,
           }
