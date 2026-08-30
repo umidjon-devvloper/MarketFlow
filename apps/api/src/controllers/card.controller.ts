@@ -1204,6 +1204,23 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
  * biriktirish qadamini ham bajaradi (nmID faqat shu paytda paydo bo'ladi).
  */
 /**
+ * WB rasm biriktirish endpointi daqiqasiga ATIGI BITTA so'rovga ruxsat beradi
+ * (javob sarlavhasi: x-ratelimit-limit: 1). Tez-tez urinsak, har uchala
+ * urinish ham 429 bo'lib qaytadi va rasm hech qachon biriktirilmaydi.
+ *
+ * Shuning uchun oxirgi urinish vaqti mahsulot atributlarida saqlanadi va
+ * bir daqiqa o'tmaguncha WB ga umuman murojaat qilinmaydi. Xotiradagi
+ * cheklovchi bu yerda yaramaydi: serverless muhitda u har so'rovda tozalanadi.
+ */
+const WB_MEDIA_GAP_MS = 65_000;
+
+function mediaCooldownLeft(attributes: unknown): number {
+  const at = Date.parse(String((attributes as any)?.wbMediaAt ?? ''));
+  if (!Number.isFinite(at)) return 0;
+  return Math.max(0, WB_MEDIA_GAP_MS - (Date.now() - at));
+}
+
+/**
  * POST /api/cards/finalize-pending
  *
  * Kutilayotgan WB kartochkalarini yakunlaydi: nmID ni topib, rasmlarni
@@ -1260,6 +1277,9 @@ export async function finalizePending(req: Request, res: Response, next: NextFun
       const attrs = (listing.product.attributes as any) || {};
       const knownNmId = Number(attrs.wbNmId) || undefined;
 
+      // Bir daqiqa o'tmagan bo'lsa WB ga tegmaymiz — baribir 429 qaytadi
+      if (imageUrls.length && mediaCooldownLeft(attrs) > 0) continue;
+
       try {
         const result = await checkPublishStatus(
           spec,
@@ -1270,10 +1290,17 @@ export async function finalizePending(req: Request, res: Response, next: NextFun
         );
 
         const foundNmId = Number((result.raw as any)?.nmID);
-        if (foundNmId && foundNmId !== knownNmId) {
+        if (foundNmId) {
           await prisma.product.update({
             where: { id: listing.productId },
-            data: { attributes: { ...attrs, wbNmId: foundNmId } },
+            data: {
+              attributes: {
+                ...attrs,
+                wbNmId: foundNmId,
+                // Rasm urinishi bo'lgan bo'lsa vaqtini belgilaymiz
+                ...(imageUrls.length ? { wbMediaAt: new Date().toISOString() } : {}),
+              },
+            },
           });
         }
 
@@ -1343,6 +1370,18 @@ export async function publishStatus(req: Request, res: Response, next: NextFunct
     const attrs = (product.attributes as any) || {};
     const knownNmId = Number(attrs.wbNmId) || undefined;
 
+    // WB rasm biriktirishga daqiqasiga bitta so'rov beradi — erta urinsak
+    // 429 qaytadi va bitta ruxsat behuda ketadi
+    const cooldown = spec.id === 'WB' && imageUrls.length ? mediaCooldownLeft(attrs) : 0;
+    if (cooldown > 0) {
+      return res.json({
+        success: true,
+        pending: true,
+        taskId: listing.externalId,
+        message: `Rasm biriktirilishi kutilmoqda — WB limiti tufayli ${Math.ceil(cooldown / 1000)} soniyadan keyin qayta urinamiz.`,
+      });
+    }
+
     const result = await checkPublishStatus(
       spec,
       {
@@ -1356,10 +1395,16 @@ export async function publishStatus(req: Request, res: Response, next: NextFunct
     );
 
     const foundNmId = Number((result.raw as any)?.nmID);
-    if (spec.id === 'WB' && foundNmId && foundNmId !== knownNmId) {
+    if (spec.id === 'WB' && foundNmId) {
       await prisma.product.update({
         where: { id: product.id },
-        data: { attributes: { ...attrs, wbNmId: foundNmId } },
+        data: {
+          attributes: {
+            ...attrs,
+            wbNmId: foundNmId,
+            ...(imageUrls.length ? { wbMediaAt: new Date().toISOString() } : {}),
+          },
+        },
       });
     }
 

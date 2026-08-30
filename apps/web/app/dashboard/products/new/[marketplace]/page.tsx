@@ -535,16 +535,19 @@ export default function NewCardPage() {
   };
 
   /**
-   * Natijani so'rab turish. WB odatda 30 soniya — bir necha daqiqada
-   * yaratadi, ustiga so'rov limitiga ham tushib qolishi mumkin (u daqiqalik).
-   * Shuning uchun 10 marta 20 soniyada tekshiramiz (~3 daqiqa).
-   * Topilmasa ham xato emas: mahsulot sahifasida "Holatni tekshirish" bor.
+   * Natijani so'rab turish.
+   *
+   * Oraliq 35 soniya: WB rasm biriktirishga daqiqasiga ATIGI BITTA so'rov
+   * beradi, tez-tez so'rasak bitta ruxsat behuda ketadi. Server tarafda ham
+   * shu cheklov bor, bu yerda esa ortiqcha chaqiruv qilmaymiz.
+   * 8 marta ~35 soniyada = ~5 daqiqa. Topilmasa ham xato emas: mahsulot
+   * sahifasida "Holatni tekshirish" bor.
    */
   const pollPublishStatus = async (productId: string, marketplace: string) => {
     setFinalizing(true);
     try {
-      for (let attempt = 0; attempt < 10; attempt++) {
-        await new Promise((r) => setTimeout(r, 20000));
+      for (let attempt = 0; attempt < 8; attempt++) {
+        await new Promise((r) => setTimeout(r, 35000));
         try {
           const { data } = await api.get(`/cards/${productId}/publish-status/${marketplace}`);
           if (!data.pending) {
