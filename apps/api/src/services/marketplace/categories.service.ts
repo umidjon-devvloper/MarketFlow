@@ -446,6 +446,15 @@ export interface CharcField {
    * marketplace qiymatni tanimaydi.
    */
   options?: string[];
+  /**
+   * Ozon: atribut lug'atli bo'lsa uning ID si.
+   *
+   * Bunday atributga erkin matn yozib bo'lmaydi — Ozon `dictionary_value_id`
+   * kutadi va mos kelmagan qiymatni JIMGINA tashlab yuboradi, keyin esa
+   * kartochkani "Это обязательное поле" deb rad etadi. Lug'atlar uzun
+   * (ИКПУ — o'n minglab kod), shuning uchun ro'yxat emas, qidiruv beriladi.
+   */
+  dictionaryId?: number;
 }
 
 /**
@@ -581,6 +590,7 @@ export async function getOzonAttributes(
       // Ozon "aspect" deb belgilagan atributlar qidiruvda ishlatiladi —
       // ular sotuvchi uchun ham muhimroq
       popular: !!a?.is_aspect,
+      ...(Number(a?.dictionary_id) > 0 ? { dictionaryId: Number(a.dictionary_id) } : {}),
     });
   }
 

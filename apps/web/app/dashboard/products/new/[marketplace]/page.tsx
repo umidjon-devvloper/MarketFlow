@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
@@ -537,6 +537,24 @@ export default function NewCardPage() {
     }
   };
 
+  /**
+   * Ozon lug'atli atributining qiymatlarini qidirish.
+   *
+   * Bunday atributga erkin matn yozib bo'lmaydi: Ozon `dictionary_value_id`
+   * kutadi, mos kelmagan matnni jimgina tashlab yuboradi va kartochkani
+   * "Это обязательное поле" deb rad etadi.
+   */
+  const searchOzonValues = useCallback(
+    async (attributeId: number, query: string) => {
+      if (!subjectId || !ozonTypeId) return [];
+      const { data } = await api.get('/cards/ozon/attribute-values', {
+        params: { subjectId, typeId: ozonTypeId, attributeId, q: query },
+      });
+      return (data.items as Array<{ value: string }>).map((i) => i.value);
+    },
+    [subjectId, ozonTypeId],
+  );
+
   /** Kartochkani marketplace API'si orqali joylash */
   const handlePublish = async () => {
     if (!spec || !savedId) return;
@@ -996,6 +1014,7 @@ export default function NewCardPage() {
                 onChange={(id, v) => setWbCharcs((prev) => ({ ...prev, [String(id)]: v }))}
                 onAiFill={() => runAiFill('charcs')}
                 aiFilling={charcFilling}
+                searchValues={spec.id === 'OZON' ? searchOzonValues : undefined}
               />
             </div>
           )}

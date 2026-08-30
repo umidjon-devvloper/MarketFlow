@@ -162,6 +162,31 @@ export async function getAttributeValues(
   return data?.result || [];
 }
 
+/**
+ * POST /v1/description-category/attribute/values/search — lug'atdan qidirish.
+ *
+ * Ba'zi lug'atlar juda uzun (ИКПУ — o'n minglab kod), ularni sahifalab
+ * o'qish ham, formaga sig'dirish ham mumkin emas. Ozon shu maqsadda alohida
+ * qidiruv chaqiruvini beradi: sotuvchi yozgan matnga mos qiymatlar qaytadi.
+ */
+export async function searchAttributeValues(
+  creds: OzonCreds,
+  categoryId: number,
+  typeId: number,
+  attributeId: number,
+  value: string,
+  limit = 30,
+): Promise<any[]> {
+  const data = await ozonFetch<any>(creds, '/v1/description-category/attribute/values/search', {
+    description_category_id: categoryId,
+    type_id: typeId,
+    attribute_id: attributeId,
+    value,
+    limit,
+  });
+  return data?.result || [];
+}
+
 /** POST /v1/product/import/info — import vazifasining natijasi (xatolar shu yerda) */
 export function getImportInfo(creds: OzonCreds, taskId: string | number): Promise<any> {
   return ozonFetch(creds, '/v1/product/import/info', { task_id: Number(taskId) });

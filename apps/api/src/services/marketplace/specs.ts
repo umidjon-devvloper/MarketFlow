@@ -531,7 +531,7 @@ const OZON: MarketplaceSpec = {
         { key: 'price', label: 'Narx (Цена)', excelHeader: 'Цена, руб.', type: 'number', required: true, min: 1, unit: 'RUB', mapsTo: 'basePrice' },
         { key: 'oldPrice', label: 'Chegirmagacha (Цена до скидки)', excelHeader: 'Цена до скидки, руб.', type: 'number', required: false, min: 0, unit: 'RUB' },
         { key: 'stock', label: 'Zaxira (Остаток)', excelHeader: 'Остаток', type: 'number', required: true, min: 0, mapsTo: 'stock' },
-        { key: 'vat', label: 'QQS (НДС)', excelHeader: 'НДС, %', type: 'select', required: true, options: ['0%', '10%', '20%'] },
+        { key: 'vat', label: 'QQS (НДС)', excelHeader: 'НДС, %', type: 'select', required: true, options: ['0%', '12%', '10%', '20%'], hint: "O'zbekistondagi do'kon uchun odatda 12% yoki 0%" },
       ],
     },
     {

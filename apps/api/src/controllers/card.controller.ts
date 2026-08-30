@@ -29,6 +29,7 @@ import { storeImage, hasCloudStorage } from '../services/image/storage';
 import { fillFieldsFromImages } from '../services/ai/vision.service';
 import { suggestPrice } from '../services/ai/price-advisor.service';
 import { matchCategory, chooseTnved } from '../services/ai/category-match.service';
+import * as ozon from '../services/marketplace/ozon-api.service';
 import {
   assertAiQuota,
   recordAiJob,
@@ -1295,6 +1296,59 @@ export async function listCategories(req: Request, res: Response, next: NextFunc
  * Tanlangan kategoriya (subjectID) uchun dinamik xarakteristikalar — forma
  * shu kategoriyaga mos maydonlarni chizsin.
  */
+/**
+ * GET /api/cards/categories/OZON/attribute-values
+ *   ?subjectId=&typeId=&attributeId=&q=
+ *
+ * Ozon lug'atli atributining qiymatlarini qidirish.
+ *
+ * Bunday atributga erkin matn yozib bo'lmaydi: Ozon `dictionary_value_id`
+ * kutadi, mos kelmagan matnni esa jimgina tashlab yuboradi va keyin
+ * kartochkani "Это обязательное поле" deb rad etadi. Sotuvchi qiymatni
+ * ro'yxatdan tanlashi uchun shu yo'l kerak.
+ */
+export async function getOzonAttributeValues(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+
+    const subjectId = Number(req.query.subjectId);
+    const typeId = Number(req.query.typeId);
+    const attributeId = Number(req.query.attributeId);
+    if (![subjectId, typeId, attributeId].every((n) => Number.isFinite(n) && n > 0)) {
+      throw new HttpError(400, "subjectId, typeId va attributeId kerak");
+    }
+
+    const cred = await prisma.userMarketplace.findFirst({
+      where: { organizationId, marketplace: 'OZON', isActive: true },
+    });
+    if (!cred?.shopId && !cred?.apiSecret) {
+      throw new HttpError(400, "Ozon ulanmagan — Marketplace'lar bo'limida kalitni kiriting");
+    }
+
+    const creds = {
+      apiKey: decrypt(cred!.apiKey),
+      clientId: cred!.apiSecret ? decrypt(cred!.apiSecret) : String(cred!.shopId ?? ''),
+    };
+
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const rows = query
+      ? await ozon.searchAttributeValues(creds, subjectId, typeId, attributeId, query, 30)
+      : await ozon.getAttributeValues(creds, subjectId, typeId, attributeId, { limit: 30 });
+
+    res.json({
+      items: rows
+        .map((r: any) => ({ id: Number(r?.id), value: String(r?.value ?? '') }))
+        .filter((r: any) => r.value),
+    });
+  } catch (err: any) {
+    if (err instanceof HttpError) return next(err);
+    if (typeof err?.status === 'number') {
+      return next(new HttpError(err.status === 429 ? 429 : 502, err.message));
+    }
+    next(err);
+  }
+}
+
 /**
  * GET /api/cards/categories/:marketplace/tnved?subjectId=
  *

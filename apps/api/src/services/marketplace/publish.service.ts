@@ -316,10 +316,15 @@ async function findOzonDictionaryValue(
   return null;
 }
 
-/** "12%" → "0.12" ko'rinishidagi Ozon formati */
+/**
+ * "12%" → "0.12" ko'rinishidagi Ozon formati.
+ *
+ * O'zbekistondagi do'kon uchun 20% yaramaydi — Ozon "НДС неверно указан"
+ * deb kartochkani rad etadi. Shuning uchun ro'yxatda 12% ham bor.
+ */
 function vatToOzon(values: Record<string, any>): string {
   const digits = str(values, 'vat').replace('%', '');
-  const map: Record<string, string> = { '0': '0', '10': '0.1', '20': '0.2' };
+  const map: Record<string, string> = { '0': '0', '5': '0.05', '7': '0.07', '10': '0.1', '12': '0.12', '20': '0.2' };
   return map[digits] ?? '0';
 }
 

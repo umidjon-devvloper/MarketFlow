@@ -26,6 +26,7 @@ router.get('/ai-usage', controller.aiUsage);
 router.get('/categories/:marketplace', controller.listCategories);
 router.get('/categories/:marketplace/charcs', controller.getCategoryCharcs);
 router.get('/categories/:marketplace/tnved', controller.getCategoryTnved);
+router.get('/ozon/attribute-values', controller.getOzonAttributeValues);
 
 // Mavjud mahsulotni boshqa marketplace uchun qayta ishlatish
 router.get('/:productId/prefill/:marketplace', controller.prefillCard);

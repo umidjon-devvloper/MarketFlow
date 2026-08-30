@@ -80,8 +80,11 @@ describe('publish — QQS formati', () => {
     expect(vatToOzon({ vat: '20%' })).toBe('0.2');
     expect(vatToOzon({ vat: '10%' })).toBe('0.1');
     expect(vatToOzon({ vat: '0%' })).toBe('0');
-    // Uzum'dan ko'chirilgan 12% Ozon ro'yxatida yo'q — 0 ga tushadi
-    expect(vatToOzon({ vat: '12%' })).toBe('0');
+    // O'zbekistondagi do'kon uchun 12% kerak: 20% bilan Ozon kartochkani
+    // "НДС неверно указан" deb rad etadi (jonli tekshirildi)
+    expect(vatToOzon({ vat: '12%' })).toBe('0.12');
+    // Noma'lum qiymat — 0 ga tushadi
+    expect(vatToOzon({ vat: '33%' })).toBe('0');
   });
 });
 
