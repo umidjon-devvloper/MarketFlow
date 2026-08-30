@@ -39,10 +39,10 @@ const DATA_START_ROW = 4;
  */
 let cachedMaxRows: number | null = null;
 
-export function uzumMaxRows(): number {
-  if (cachedMaxRows !== null) return cachedMaxRows;
+export function uzumMaxRows(template?: Buffer): number {
+  if (!template && cachedMaxRows !== null) return cachedMaxRows;
 
-  const zip = unzipSync(new Uint8Array(fs.readFileSync(templatePath())));
+  const zip = unzipSync(new Uint8Array(template ?? fs.readFileSync(templatePath())));
   const sheet = zip[SHEET_PATH];
   if (!sheet) throw new Error('Shablon buzilgan: Лист1 topilmadi');
 
@@ -53,8 +53,9 @@ export function uzumMaxRows(): number {
     if (n > last) last = n;
   }
 
-  cachedMaxRows = Math.max(0, last - DATA_START_ROW + 1);
-  return cachedMaxRows;
+  const rows = Math.max(0, last - DATA_START_ROW + 1);
+  if (!template) cachedMaxRows = rows;
+  return rows;
 }
 
 /** Лист1 XML ichidagi yo'l */
@@ -252,8 +253,8 @@ function templatePath(): string {
 /**
  * Uzum shablonini ma'lumot bilan to'ldirib, .xlsm buferini qaytaradi.
  */
-export function fillUzumTemplate(rows: UzumExportRow[]): UzumExportResult {
-  const maxRows = uzumMaxRows();
+export function fillUzumTemplate(rows: UzumExportRow[], template?: Buffer): UzumExportResult {
+  const maxRows = uzumMaxRows(template);
   if (rows.length > maxRows) {
     throw new Error(
       `Shablonga ${maxRows} tadan ko'p tovar sig'maydi (siz ${rows.length} ta tanladingiz). ` +
@@ -353,7 +354,7 @@ export function fillUzumTemplate(rows: UzumExportRow[]): UzumExportResult {
     // sotuvchi ularni Excel ichida qo'lda tanlashi kerak edi.
     const charcValues = row.values.uzumCharacteristics;
     if (charcValues && typeof charcValues === 'object') {
-      for (const charc of uzumCharacteristics()) {
+      for (const charc of uzumCharacteristics(template)) {
         const raw = (charcValues as Record<string, unknown>)[String(charc.id)];
         const text = String(raw ?? '').trim();
         if (!text) continue;
@@ -426,10 +427,10 @@ function columnIndex(col: string): number {
 
 let cachedCharcs: UzumCharacteristic[] | null = null;
 
-export function uzumCharacteristics(): UzumCharacteristic[] {
-  if (cachedCharcs) return cachedCharcs;
+export function uzumCharacteristics(template?: Buffer): UzumCharacteristic[] {
+  if (!template && cachedCharcs) return cachedCharcs;
 
-  const zip = unzipSync(new Uint8Array(fs.readFileSync(templatePath())));
+  const zip = unzipSync(new Uint8Array(template ?? fs.readFileSync(templatePath())));
   const text = (p: string) => (zip[p] ? Buffer.from(zip[p]).toString('utf8') : '');
 
   const shared = [...text('xl/sharedStrings.xml').matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) =>
@@ -498,6 +499,6 @@ export function uzumCharacteristics(): UzumCharacteristic[] {
     });
   }
 
-  cachedCharcs = out;
+  if (!template) cachedCharcs = out;
   return out;
 }

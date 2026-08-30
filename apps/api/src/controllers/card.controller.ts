@@ -80,6 +80,12 @@ import {
   uzumCharacteristics,
 } from '../services/export/uzum-template.service';
 import { fillWbTemplate, toWbRow, wbFileName } from '../services/export/wb-template.service';
+import {
+  getTemplateBuffer,
+  getTemplateInfo,
+  saveTemplate,
+  deleteTemplate,
+} from '../services/export/template-store.service';
 
 // ============================================
 // Spetsifikatsiyalar
@@ -119,6 +125,77 @@ const upload = multer({
 });
 
 export const uploadMiddleware = upload.single('file');
+
+/** Excel shabloni uchun alohida yuklovchi — rasm emas, hajmi ham kattaroq */
+const templateUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 12 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!/\.(xlsx|xlsm)$/i.test(file.originalname)) {
+      return cb(new Error("Faqat .xlsx yoki .xlsm shabloni qabul qilinadi"));
+    }
+    cb(null, true);
+  },
+});
+
+export const templateUploadMiddleware = templateUpload.single('file');
+
+// ============================================
+// Sotuvchining Excel shabloni
+// ============================================
+
+/**
+ * Marketplace shablonlari KATEGORIYAGA bog'langan: ilova bilan kelgan nusxa
+ * faqat bitta kategoriya uchun to'g'ri keladi (WB'da o'yinchoqlar, Uzum'da
+ * kiyim). Boshqa kategoriyada ustunlar mos kelmaydi va to'ldirilgan faylni
+ * yuklab bo'lmaydi. Shuning uchun sotuvchi o'z shablonini bir marta joylaydi.
+ */
+export async function uploadTemplate(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+    const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
+    if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
+    if (!req.file) throw new HttpError(400, 'Fayl yuborilmadi');
+
+    const info = await saveTemplate({
+      organizationId,
+      marketplace: spec.id as Marketplace,
+      label: String(req.body?.label ?? '').trim() || spec.name,
+      fileName: req.file.originalname,
+      content: req.file.buffer,
+    });
+
+    res.json({ marketplace: spec.id, template: info });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function templateInfo(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+    const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
+    if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
+
+    const info = await getTemplateInfo(organizationId, spec.id as Marketplace);
+    res.json({ marketplace: spec.id, template: info });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeTemplate(req: Request, res: Response, next: NextFunction) {
+  try {
+    const organizationId = req.organization!.id;
+    const spec = getSpec(req.params.marketplace?.toUpperCase() || '');
+    if (!spec) throw new HttpError(404, "Bunday marketplace yo'q");
+
+    const removed = await deleteTemplate(organizationId, spec.id as Marketplace);
+    res.json({ marketplace: spec.id, removed });
+  } catch (err) {
+    next(err);
+  }
+}
 
 /**
  * POST /api/cards/upload
@@ -964,6 +1041,7 @@ const exportSchema = z
 
 export async function exportExcel(req: Request, res: Response, next: NextFunction) {
   try {
+    const organizationId = req.organization!.id;
     const body = exportSchema.parse(req.body);
     const spec = getSpec(body.marketplace.toUpperCase());
     if (!spec) throw new HttpError(404, 'Bunday marketplace yo\'q');
@@ -1005,8 +1083,12 @@ export async function exportExcel(req: Request, res: Response, next: NextFunctio
     // Uzum'da o'z .xlsm shabloni bor — makros va validatsiyalari bilan.
     // Uni qayta yaratib bo'lmaydi, shuning uchun tayyorini to'ldiramiz.
     if (spec.id === 'UZUM') {
+      // Sotuvchi o'z kategoriyasining shablonini yuklagan bo'lsa — o'shani
+      // to'ldiramiz. Ilova bilan kelgan nusxa faqat bitta kategoriya uchun.
+      const custom = await getTemplateBuffer(organizationId, spec.id as Marketplace);
+
       // Chegara shablonning o'zidan hisoblanadi — qattiq yozilgan son emas
-      const maxRows = uzumMaxRows();
+      const maxRows = uzumMaxRows(custom ?? undefined);
       if (rows.length > maxRows) {
         throw new HttpError(
           400,
@@ -1017,6 +1099,7 @@ export async function exportExcel(req: Request, res: Response, next: NextFunctio
 
       const { buffer, warnings } = fillUzumTemplate(
         rows.map((row) => toUzumRow(row.values, row.imageUrls)),
+        custom ?? undefined,
       );
       const fileName = uzumFileName(rows.length);
 
@@ -1033,11 +1116,14 @@ export async function exportExcel(req: Request, res: Response, next: NextFunctio
     }
 
     // Wildberries'da ham o'z Excel shabloni bor (3636 ustun, "Загрузить из файла"
-    // aynan shu strukturani kutadi). Uzum'dagidek tayyorini to'ldiramiz —
-    // hozircha "Игрушки" (o'yinchoqlar) shabloni.
+    // aynan shu strukturani kutadi). Sotuvchi o'z kategoriyasi shablonini
+    // yuklagan bo'lsa o'shani, aks holda ilova bilan kelgan nusxani
+    // (o'yinchoqlar) to'ldiramiz.
     if (spec.id === 'WB') {
+      const custom = await getTemplateBuffer(organizationId, spec.id as Marketplace);
       const { buffer, warnings } = fillWbTemplate(
         rows.map((row) => toWbRow(row.values, row.imageUrls)),
+        custom ?? undefined,
       );
       const fileName = wbFileName(rows.length);
 
@@ -1173,7 +1259,8 @@ export async function getCategoryCharcs(req: Request, res: Response, next: NextF
       // Uzum'da API yo'q, lekin ma'lumotnoma shablonning ICHIDA: xususiyat
       // nomlari va ruxsat etilgan qiymatlar o'sha faylda turadi. Kalit ham,
       // kategoriya ham kerak emas.
-      const charcs = uzumCharacteristics().map((c) => ({
+      const custom = await getTemplateBuffer(organizationId, 'UZUM');
+      const charcs = uzumCharacteristics(custom ?? undefined).map((c) => ({
         id: c.id,
         name: c.name,
         type: 'string' as const,

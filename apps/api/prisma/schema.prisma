@@ -89,6 +89,7 @@ model Organization {
   publishJobs      PublishJob[]
   orders           MarketplaceOrder[]
   competitorWatches CompetitorWatch[]
+  templates         MarketplaceTemplate[]
 
   @@index([ownerId])
   @@index([slug])
@@ -635,6 +636,38 @@ model MarketplaceOrder {
 /// VALYUTA: raqobatchi narxi o'z bozori valyutasida (uzum.uz — UZS,
 /// wildberries.ru — RUB). O'zining narxi bilan solishtirish faqat valyuta
 /// mos kelganda qilinadi — aks holda "arzon/qimmat" degan xulosa yanglish.
+/// Sotuvchining o'z Excel shabloni.
+///
+/// Nega kerak: marketplace shablonlari KATEGORIYAGA bog'langan. Ilova bilan
+/// birga kelgan nusxa faqat bitta kategoriya uchun to'g'ri keladi (WB'da
+/// o'yinchoqlar, Uzum'da kiyim) — boshqa kategoriyada ustunlar mos kelmaydi
+/// va sotuvchi to'ldirilgan faylni yuklay olmaydi.
+///
+/// Shuning uchun sotuvchi o'z kategoriyasining shablonini kabinetdan yuklab
+/// olib, shu yerga bir marta joylaydi. Keyingi eksportlar o'sha faylni
+/// to'ldiradi. Uzum'da bundan tashqari kategoriya xususiyatlari ham aynan
+/// shu fayldan o'qiladi.
+model MarketplaceTemplate {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  marketplace Marketplace
+  /// Sotuvchi bergan nom — qaysi kategoriya uchun ekani
+  label       String
+  fileName    String
+  /// Faylning o'zi
+  content     Bytes
+  size        Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Har marketplace uchun bitta amaldagi shablon
+  @@unique([organizationId, marketplace])
+  @@index([organizationId])
+}
+
 /// Marketplace so'rovlariga umumiy tezlik cheklovi.
 ///
 /// Nega bazada: ilova serverless muhitda ishlaydi va har so'rov yangi

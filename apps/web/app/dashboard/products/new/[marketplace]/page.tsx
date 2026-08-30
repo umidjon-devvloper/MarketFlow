@@ -26,6 +26,7 @@ import { RemoteImage } from '@/components/RemoteImage';
 import { QualityPanel, QualityScore } from '@/components/quality/QualityBadge';
 import { PriceAdvisor } from '@/components/products/PriceAdvisor';
 import { TnvedPicker } from '@/components/products/TnvedPicker';
+import { TemplatePanel } from '@/components/products/TemplatePanel';
 import { useToast } from '@/components/Toast';
 import { SkeletonPage } from '@/components/Skeleton';
 import {
@@ -995,6 +996,11 @@ export default function NewCardPage() {
       {step === 3 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
+            {/* Excel qadamida — shablon qaysi kategoriya uchun ekani muhim */}
+            {(spec.id === 'UZUM' || spec.id === 'WB') && (
+              <TemplatePanel marketplace={spec.id} name={spec.name} />
+            )}
+
             <div className="card p-6">
               <h2 className="font-semibold mb-4">Kartochka ko'rinishi</h2>
               <div className="flex gap-4">

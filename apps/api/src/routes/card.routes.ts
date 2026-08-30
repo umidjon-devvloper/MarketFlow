@@ -53,4 +53,9 @@ router.get('/', controller.listCards);
 router.post('/', controller.saveCard);
 router.post('/export', controller.exportExcel);
 
+// Sotuvchining o'z Excel shabloni (kategoriya bo'yicha)
+router.get('/template/:marketplace', controller.templateInfo);
+router.post('/template/:marketplace', controller.templateUploadMiddleware, controller.uploadTemplate);
+router.delete('/template/:marketplace', controller.removeTemplate);
+
 export default router;

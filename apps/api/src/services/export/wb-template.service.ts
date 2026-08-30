@@ -207,8 +207,15 @@ export function toWbRow(values: Record<string, any>, imageUrls: string[]): WbExp
   return { values, imageUrls };
 }
 
-export function fillWbTemplate(rows: WbExportRow[]): { buffer: Buffer; warnings: WbExportWarning[] } {
-  const zip = unzipSync(new Uint8Array(fs.readFileSync(templatePath())));
+export function fillWbTemplate(
+  rows: WbExportRow[],
+  /**
+   * Sotuvchining o'z shabloni. Berilmasa ilova bilan kelgan nusxa
+   * ishlatiladi — u faqat bitta kategoriya uchun to'g'ri keladi.
+   */
+  template?: Buffer,
+): { buffer: Buffer; warnings: WbExportWarning[] } {
+  const zip = unzipSync(new Uint8Array(template ?? fs.readFileSync(templatePath())));
   const sheetBytes = zip[SHEET_PATH];
   const sharedBytes = zip[SHARED_PATH];
   if (!sheetBytes) throw new Error('WB shabloni buzilgan: Items varag\'i topilmadi');
